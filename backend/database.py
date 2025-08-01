@@ -48,6 +48,20 @@ class AdminDB(Base):
     
     discord_id = Column(String, primary_key=True, index=True)
     username = Column(String, nullable=False)
+    added_by = Column(String, nullable=False)
+    added_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+class DockmasterDB(Base):
+    __tablename__ = "dockmasters"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    zone_id = Column(String, nullable=False, index=True)
+    x = Column(Integer, nullable=False)
+    y = Column(Integer, nullable=False)
+    map = Column(Integer, nullable=False)
+    enabled = Column(Boolean, default=True)
+    is_reference_point = Column(Boolean, default=False)
     added_by = Column(String, nullable=False)  # Discord ID of who added this admin
     added_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)

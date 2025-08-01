@@ -3,17 +3,22 @@ from typing import Optional, Literal
 from datetime import datetime
 
 class DockmasterEntry(BaseModel):
-    zone_id: str = Field(..., description="Unique zone ID, e.g., '1A-E'")
+    zone_id: str = Field(..., description="Unique zone ID, e.g., '1A-E' or 'XD-1'")
     x: int = Field(..., description="X-coordinate")
     y: int = Field(..., description="Y-coordinate") 
     map: int = Field(..., description="Map ID")
     enabled: bool = Field(default=True, description="Whether DM is active")
+    is_reference_point: bool = Field(default=False, description="If true, this is a map-only reference point (e.g., 6142)")
+    transition_zone: Optional[str] = Field(None, description="Identifier for transition zone if this is part of one")
+    confidence: Optional[float] = Field(None, description="AI confidence score for this match")
 
 class SuggestionCreate(BaseModel):
     action: Literal["add", "remove"] = Field(..., description="Action to perform")
     zone_id: str = Field(..., description="Zone ID for the suggestion")
     x: Optional[int] = Field(None, description="X-coordinate (required for add)")
     y: Optional[int] = Field(None, description="Y-coordinate (required for add)")
+    map: Optional[int] = Field(7, description="Map ID (defaults to 7)")
+    enabled: bool = Field(True, description="Whether DM is active (defaults to True)")
     reason: str = Field(..., description="Reason for the suggestion")
     submitter_name: Optional[str] = Field(None, description="Name of person making suggestion")
     submitter_discord: Optional[str] = Field(None, description="Discord ID of submitter")

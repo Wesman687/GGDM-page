@@ -19,6 +19,8 @@ export default function AdminPage() {
   const [showAdminManagement, setShowAdminManagement] = useState(false)
   const [newAdminData, setNewAdminData] = useState<AdminCreate>({ discord_id: '', username: '' })
   const [editingSuggestion, setEditingSuggestion] = useState<Suggestion | null>(null)
+  const [processingApprovals, setProcessingApprovals] = useState<Set<string>>(new Set())
+  const [approvingAll, setApprovingAll] = useState(false)
   const [editFormData, setEditFormData] = useState({
     zone_id: '',
     x: 0,
@@ -63,6 +65,8 @@ export default function AdminPage() {
 
   const handleSuggestionAction = async (id: string, status: 'approved' | 'rejected', adminNotes?: string) => {
     try {
+      setProcessingApprovals(prev => new Set(prev).add(id))
+      
       await apiService.updateSuggestion(id, { status, admin_notes: adminNotes })
       toast.success(`Suggestion ${status} successfully!`)
       
@@ -72,11 +76,23 @@ export default function AdminPage() {
       }
       
       // Reload data after a short delay to allow PR creation to complete
-      setTimeout(loadData, 2000)
+      setTimeout(() => {
+        loadData()
+        setProcessingApprovals(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(id)
+          return newSet
+        })
+      }, 2000)
     } catch (error: any) {
       console.error(`Failed to ${status} suggestion:`, error)
       const errorMessage = error.message || `Failed to ${status} suggestion`
       toast.error(errorMessage, { duration: 10000 })
+      setProcessingApprovals(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
     }
   }
 
@@ -88,6 +104,38 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Failed to retry PR:', error)
       toast.error('Failed to create GitHub PR. Please try again.')
+    }
+  }
+
+  const handleApproveAll = async () => {
+    const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
+    if (pendingSuggestions.length === 0) {
+      toast.error('No pending suggestions to approve')
+      return
+    }
+
+    try {
+      setApprovingAll(true)
+      toast.success(`Approving ${pendingSuggestions.length} suggestions...`, { duration: 3000 })
+
+      // Process all approvals in parallel
+      const approvalPromises = pendingSuggestions.map(suggestion => 
+        apiService.updateSuggestion(suggestion.id, { status: 'approved', admin_notes: 'Bulk approval' })
+      )
+
+      await Promise.all(approvalPromises)
+      
+      toast.success(`Successfully approved ${pendingSuggestions.length} suggestions!`)
+      toast.success('Creating GitHub Pull Requests...', { duration: 5000 })
+      
+      // Reload data after a delay to allow PR creation to complete
+      setTimeout(loadData, 3000)
+    } catch (error: any) {
+      console.error('Failed to approve all suggestions:', error)
+      toast.error('Failed to approve all suggestions. Some may have been processed.')
+      loadData() // Reload to see which ones succeeded
+    } finally {
+      setApprovingAll(false)
     }
   }
 
@@ -293,6 +341,28 @@ export default function AdminPage() {
             </nav>
           </div>
 
+          {/* Action Buttons */}
+          {filter === 'pending' && stats.pending > 0 && (
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+              <button
+                onClick={handleApproveAll}
+                disabled={approvingAll}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approvingAll ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                    Approving All ({stats.pending})...
+                  </>
+                ) : (
+                  <>
+                    ✅ Approve All ({stats.pending})
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* Suggestions List */}
           <div className="px-6 py-4">
             {loading ? (
@@ -305,7 +375,7 @@ export default function AdminPage() {
                 <span className="text-gray-500">No suggestions found for this filter.</span>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="max-h-96 overflow-y-auto space-y-4 pr-2">
                 {suggestions.map((suggestion) => (
                   <div key={suggestion.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex justify-between items-start">
@@ -392,9 +462,17 @@ export default function AdminPage() {
                               const notes = prompt('Optional admin notes:')
                               handleSuggestionAction(suggestion.id, 'approved', notes || undefined)
                             }}
-                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            disabled={processingApprovals.has(suggestion.id)}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            ✅ Approve
+                            {processingApprovals.has(suggestion.id) ? (
+                              <>
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1" />
+                                Processing...
+                              </>
+                            ) : (
+                              '✅ Approve'
+                            )}
                           </button>
                           <button
                             onClick={() => {

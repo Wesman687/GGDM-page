@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 import uuid
-from typing import List
+from typing import List, Dict
 from datetime import datetime
-from models import SuggestionCreate, Suggestion
+from models import SuggestionCreate, Suggestion, DockmasterEntry
 from database import get_db, SuggestionDB
+from utils.matcher import find_nearest_dockmaster
 
 router = APIRouter()
 
@@ -44,6 +45,10 @@ async def create_suggestion(suggestion_data: SuggestionCreate, db: Session = Dep
                 status_code=400, 
                 detail="X and Y coordinates are required for 'add' action"
             )
+            
+    # Format the zone ID to standardized format
+    from utils.matcher import format_dockmaster_id
+    suggestion_data.zone_id = format_dockmaster_id(suggestion_data.zone_id)
     
     # Create suggestion in database
     db_suggestion = SuggestionDB(
@@ -88,6 +93,36 @@ async def get_suggestion(suggestion_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
     return db_suggestion_to_pydantic(db_suggestion)
+
+@router.post("/test_coords")
+async def test_coordinates(coords: Dict[str, int]):
+    """Test coordinate matching"""
+    # Test data with representative dockmasters
+    test_dockmasters = [
+        # XD dockmasters (3000-5000 x, 2000-4000 y)
+        DockmasterEntry(zone_id="XD-1", x=3500, y=2500, map=7),
+        DockmasterEntry(zone_id="XD-2", x=4000, y=3000, map=7),
+        DockmasterEntry(zone_id="XD-3", x=4500, y=3500, map=7),
+        
+        # South dockmasters
+        DockmasterEntry(zone_id="1B-S", x=1500, y=2700, map=7),
+        DockmasterEntry(zone_id="2B-S", x=2000, y=3700, map=7),
+        
+        # North dockmasters
+        DockmasterEntry(zone_id="1A-N", x=3000, y=1500, map=7),
+        DockmasterEntry(zone_id="2B-N", x=3500, y=1000, map=7),
+    ]
+    
+    x = coords.get("x", 0)
+    y = coords.get("y", 0)
+    
+    nearest, confidence = find_nearest_dockmaster(x, y, test_dockmasters)
+    
+    return {
+        "coordinates": {"x": x, "y": y},
+        "matched_dockmaster": nearest.zone_id if nearest else None,
+        "confidence": confidence
+    }
 
 @router.get("/pending/count")
 async def get_pending_count(db: Session = Depends(get_db)):

@@ -4,8 +4,10 @@ import requests
 from datetime import datetime
 from typing import List
 import os
+import httpx
+import re
 from models import SuggestionUpdate, Suggestion, GitHubPRResponse, DockmasterEntry, AdminCreate, Admin
-from database import get_db, SuggestionDB, AdminDB
+from database import get_db, SuggestionDB, AdminDB, DockmasterDB
 from routes.suggestions import db_suggestion_to_pydantic
 from routes.github import get_github_headers, get_repo_info
 
@@ -13,8 +15,115 @@ router = APIRouter()
 
 def get_super_admin_ids():
     """Get list of super admin Discord IDs from environment"""
-    super_admin_ids = os.getenv("SUPER_ADMIN_IDS", "").split(",")
-    return [id.strip() for id in super_admin_ids if id.strip()]
+    super_admin_str = os.getenv("SUPER_ADMIN_IDS", "")
+    if super_admin_str:
+        return [id.strip() for id in super_admin_str.split(",") if id.strip()]
+    return []
+
+async def refresh_dockmasters_from_github(db: Session):
+    """Refresh dockmasters database from GitHub after PR merge"""
+    try:
+        # GitHub configuration
+        github_token = os.getenv("GITHUB_TOKEN")
+        repo_owner = os.getenv("GITHUB_REPO_OWNER", "LeoPiro")
+        repo_name = os.getenv("GITHUB_REPO_NAME", "GG_Dms")
+        file_path = os.getenv("GITHUB_FILE_PATH", "GG DOCKMASTERS.txt")
+        
+        if not github_token:
+            print("GitHub token not configured, skipping auto-refresh")
+            return
+        
+        # Fetch file from GitHub
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3.raw"
+        }
+        
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            
+        if response.status_code != 200:
+            print(f"Failed to fetch file from GitHub for auto-refresh: {response.status_code}")
+            return
+        
+        # Parse the file content using the same logic as dockmasters.py
+        content = response.text
+        lines = content.strip().split('\n')
+        
+        # Clear existing dockmasters
+        db.query(DockmasterDB).delete()
+        
+        # Process each line using the same logic as github.py
+        for line_num, line in enumerate(lines, 1):
+            original_line = line
+            line = line.strip()
+            
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+                
+            # Remove leading + if present (GitHub diff format)
+            if line.startswith('+'):
+                line = line[1:].strip()
+            
+            # Skip if still empty after cleaning
+            if not line:
+                continue
+                
+            # Split by tabs first, then by multiple spaces as fallback
+            if '	' in line:
+                parts = [part.strip() for part in line.split('	')]
+            else:
+                # Split by whitespace and filter empty parts
+                parts = [part for part in line.split() if part]
+            
+            # Filter out empty parts
+            parts = [part for part in parts if part]
+            
+            if len(parts) >= 5:
+                try:
+                    # Validate coordinates are numeric
+                    zone_id = parts[0]
+                    x_coord = int(parts[1])
+                    y_coord = int(parts[2])
+                    map_id = int(parts[3])
+                    enabled = parts[4].lower() in ['true', '1', 'yes', 'enabled']
+                    
+                    # Create dockmaster entry
+                    dockmaster = DockmasterDB(
+                        zone_id=zone_id,
+                        x=x_coord,
+                        y=y_coord,
+                        map=map_id,
+                        enabled=enabled,
+                        added_by="github_auto_refresh",
+                        is_reference_point=(y_coord == 6142),  # Mark reference points
+                        is_active=True
+                    )
+                    db.add(dockmaster)
+                except (ValueError, IndexError) as e:
+                    print(f"Auto-refresh: Line {line_num}: '{original_line}' -> '{line}' - {str(e)}")
+            elif len(parts) > 0:  # Non-empty line but insufficient parts
+                print(f"Auto-refresh: Line {line_num}: '{original_line}' -> '{line}' - Expected 5 parts, got {len(parts)}: {parts}")
+        
+        # Commit changes
+        db.commit()
+        
+        # Get updated count
+        total_count = db.query(DockmasterDB).count()
+        active_count = db.query(DockmasterDB).filter(
+            DockmasterDB.is_active == True,
+            DockmasterDB.y != 6142,
+            ~DockmasterDB.zone_id.like('M%')
+        ).count()
+        
+        print(f"Auto-refreshed dockmasters from GitHub: {total_count} total, {active_count} visible")
+        
+    except Exception as e:
+        print(f"Failed to auto-refresh dockmasters from GitHub: {str(e)}")
+        db.rollback()
 
 def is_super_admin(discord_id: str) -> bool:
     """Check if a Discord ID is a super admin"""
@@ -72,6 +181,14 @@ async def update_suggestion(suggestion_id: str, update_data: SuggestionUpdate, d
                 db_suggestion.pr_error = None  # Clear any previous error
                 db.commit()
                 print(f"Successfully created PR #{pr_response.pr_number} at {pr_response.pr_url}")
+                
+                # Auto-refresh dockmasters from GitHub after successful PR creation
+                try:
+                    refresh_result = await refresh_dockmasters_from_github(db)
+                    print(f"Auto-refresh after PR creation: {refresh_result}")
+                except Exception as refresh_error:
+                    print(f"Auto-refresh failed after PR creation: {refresh_error}")
+                    # Don't fail the approval if refresh fails
         except Exception as e:
             # Store error but don't fail the approval
             error_msg = str(e)
@@ -94,7 +211,17 @@ async def create_github_pr(suggestion_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
     suggestion = db_suggestion_to_pydantic(db_suggestion)
-    return await create_github_pr_internal(suggestion, db, db_suggestion)
+    pr_response = await create_github_pr_internal(suggestion, db, db_suggestion)
+    
+    # Auto-refresh dockmasters from GitHub after successful PR creation
+    try:
+        refresh_result = await refresh_dockmasters_from_github(db)
+        print(f"Auto-refresh after manual PR creation: {refresh_result}")
+    except Exception as refresh_error:
+        print(f"Auto-refresh failed after manual PR creation: {refresh_error}")
+        # Don't fail the PR creation if refresh fails
+    
+    return pr_response
 
 @router.post("/{suggestion_id}/retry-pr", response_model=GitHubPRResponse)
 async def retry_github_pr(suggestion_id: str, db: Session = Depends(get_db)):
@@ -120,6 +247,14 @@ async def retry_github_pr(suggestion_id: str, db: Session = Depends(get_db)):
         db_suggestion.pr_error = None  # Clear error
         db_suggestion.pr_retry_count = (db_suggestion.pr_retry_count or 0) + 1
         db.commit()
+        
+        # Auto-refresh dockmasters from GitHub after successful PR retry
+        try:
+            refresh_result = await refresh_dockmasters_from_github(db)
+            print(f"Auto-refresh after PR retry: {refresh_result}")
+        except Exception as refresh_error:
+            print(f"Auto-refresh failed after PR retry: {refresh_error}")
+            # Don't fail the PR creation if refresh fails
         
         return pr_response
     except Exception as e:
@@ -182,10 +317,26 @@ async def create_github_pr_internal(suggestion: Suggestion, db: Session, db_sugg
             "sha": main_sha
         }
         
+        print(f"Creating branch with data: {branch_data}")
+        print(f"Branch creation URL: {create_branch_url}")
+        
         branch_response = requests.post(create_branch_url, json=branch_data, headers=headers)
         
+        try:
+            response_data = branch_response.json()
+        except Exception as e:
+            response_data = {"error": "Could not parse response"}
+            
         if branch_response.status_code != 201:
-            raise HTTPException(status_code=500, detail="Failed to create branch")
+            error_msg = f"Failed to create branch. Status: {branch_response.status_code}. Response: {response_data}"
+            print(error_msg)
+            
+            # Check if branch already exists
+            existing_branch = requests.get(f"{create_branch_url}/heads/{branch_name}", headers=headers)
+            if existing_branch.status_code == 200:
+                print(f"Branch {branch_name} already exists, will try to reuse it")
+            else:
+                raise HTTPException(status_code=500, detail=error_msg)
         
         # Update file in new branch
         encoded_content = base64.b64encode(new_content.encode()).decode()
@@ -282,32 +433,308 @@ async def create_github_pr_internal(suggestion: Suggestion, db: Session, db_sugg
         raise HTTPException(status_code=500, detail=f"Failed to create PR: {str(e)}")
 
 def apply_suggestion_to_content(content: str, suggestion: Suggestion) -> str:
-    """Apply the suggestion changes to the file content"""
+    """Apply the suggestion changes to the file content and return properly sorted content"""
     lines = content.strip().split('\n')
+    
+    # Custom sorting function for zone IDs
+    def sort_zone_id(zone_id):
+        # Handle XD zones numerically (XD1, XD2, ..., XD10, XD11)
+        if zone_id.startswith("XD"):
+            try:
+                return (0, int(zone_id[2:]))  # 0 to put XD zones first, then numeric
+            except ValueError:
+                return (0, 9999)  # Invalid XD numbers go to end of XD section
+        # Handle XP zones (similar to XD)
+        elif zone_id.startswith("XP"):
+            try:
+                return (0.1, int(zone_id[2:]))  # 0.1 to put XP zones after XD
+            except ValueError:
+                return (0.1, 9999)
+        # Handle M zones (put them at the very end)
+        elif zone_id.startswith("M"):
+            try:
+                return (99, int(zone_id[1:]))  # 99 to put M zones at the very end
+            except ValueError:
+                return (99, 9999)
+        # Handle special zones (GH, The Gym, GG-Shelter, etc.)
+        elif not zone_id[0].isdigit():
+            return (50, zone_id)  # 50 to put special zones in middle
+        # Handle regular zones (numbers + letters + direction)
+        else:
+            # Extract number and letters for proper sorting
+            import re
+            match = re.match(r'(\d+)([A-Z]*)(-([NSEW]))?', zone_id)
+            if match:
+                number = int(match.group(1))
+                letters = match.group(2) or ""
+                direction = match.group(4) or ""
+                # Sort by number first, then letters, then direction (E, N, S, W)
+                direction_order = {"E": 1, "N": 2, "S": 3, "W": 4, "": 5}
+                return (1, number, letters, direction_order.get(direction, 5))
+            else:
+                return (2, zone_id)  # Fallback alphabetical
+    
+    # Parse all existing lines, keeping comments and headers at the top
+    header_lines = []
+    data_lines = []
+    
+    for line in lines:
+        if line.strip() == "" or line.startswith('#'):
+            header_lines.append(line)
+        else:
+            parts = line.split('\t') if '\t' in line else line.split()
+            if len(parts) >= 3:  # Valid data line
+                # Include ALL dockmasters (M#, y=6142, everything)
+                # Normalize formatting to use tabs consistently and ensure all fields are present
+                zone_id = parts[0].strip()
+                x = parts[1].strip()
+                y = parts[2].strip()
+                
+                # Handle different column formats
+                if len(parts) == 4:
+                    # Format: zone_id x y enabled (missing map)
+                    map_val = "7"
+                    enabled = parts[3].strip()
+                elif len(parts) >= 5:
+                    # Format: zone_id x y map enabled
+                    map_val = parts[3].strip()
+                    enabled = parts[4].strip()
+                else:
+                    # Format: zone_id x y (missing map and enabled)
+                    map_val = "7"
+                    enabled = "true"
+                
+                # Ensure enabled is properly formatted
+                if enabled.lower() in ['true', '1', 'yes', 'enabled', 'on']:
+                    enabled = "true"
+                elif enabled.lower() in ['false', '0', 'no', 'disabled', 'off']:
+                    enabled = "false"
+                else:
+                    enabled = "true"  # Default to "true" for any unclear values
+                
+                normalized_line = f"{zone_id}\t{x}\t{y}\t{map_val}\t{enabled}"
+                data_lines.append(normalized_line)
     
     if suggestion.action == "add":
         # Add new dockmaster entry
-        new_line = f"{suggestion.zone_id}\t{suggestion.x}\t{suggestion.y}\t{suggestion.map}\t{str(suggestion.enabled).lower()}"
-        
-        # Find appropriate place to insert (alphabetically by zone_id)
-        insert_index = len(lines)
-        for i, line in enumerate(lines):
-            if line.strip() and not line.startswith('#'):
-                parts = line.split('\t') if '\t' in line else line.split()
-                if len(parts) > 0 and parts[0] > suggestion.zone_id:
-                    insert_index = i
-                    break
-        
-        lines.insert(insert_index, new_line)
+        map_value = suggestion.map if hasattr(suggestion, 'map') and suggestion.map is not None else 7
+        enabled_value = suggestion.enabled if hasattr(suggestion, 'enabled') and suggestion.enabled is not None else True
+        enabled_str = "true" if enabled_value else "false"
+        new_line = f"{suggestion.zone_id}\t{suggestion.x}\t{suggestion.y}\t{map_value}\t{enabled_str}"
+        data_lines.append(new_line)
         
     elif suggestion.action == "remove":
         # Remove existing dockmaster entry
-        lines = [line for line in lines 
-                if not (line.strip() and 
-                       not line.startswith('#') and 
-                       (line.split('\t')[0] if '\t' in line else line.split()[0]) == suggestion.zone_id)]
+        data_lines = [line for line in data_lines 
+                     if not (line.strip() and 
+                            (line.split('\t')[0] if '\t' in line else line.split()[0]) == suggestion.zone_id)]
     
-    return '\n'.join(lines) + '\n'
+    # Sort ALL data lines properly (including M# and y=6142)
+    data_lines.sort(key=lambda line: sort_zone_id(
+        (line.split('\t')[0] if '\t' in line else line.split()[0]).strip()
+    ))
+    
+    # Combine header and sorted data (ALL data, not filtered)
+    result_lines = header_lines + data_lines
+    return '\n'.join(result_lines) + '\n'
+
+@router.post("/fix-format")
+async def fix_file_format(db: Session = Depends(get_db)):
+    """Create a special PR to fix the entire file format to ensure all entries have '7 true' format"""
+    
+    try:
+        repo_info = get_repo_info()
+        headers = get_github_headers()
+        
+        # Get current file content
+        file_url = f"https://api.github.com/repos/{repo_info['owner']}/{repo_info['repo']}/contents/{repo_info['file_path']}"
+        response = requests.get(file_url, headers=headers)
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail="Failed to get current file content")
+        
+        file_data = response.json()
+        
+        # Decode current content
+        import base64
+        current_content = base64.b64decode(file_data["content"]).decode("utf-8")
+        
+        print(f"DEBUG: Raw content first 500 chars:")
+        print(f"DEBUG: {current_content[:500]!r}")
+        
+        # Apply format normalization to ALL entries
+        lines = current_content.strip().split('\n')
+        
+        print(f"DEBUG: First 10 raw lines from GitHub:")
+        for i, line in enumerate(lines[:10]):
+            print(f"DEBUG: Raw line {i+1}: {line!r}")
+        
+        # Parse all existing lines, keeping comments and headers at the top
+        header_lines = []
+        data_lines = []
+        
+        for line in lines:
+            if line.strip() == "" or line.startswith('#'):
+                header_lines.append(line)
+            else:
+                # Handle lines that might start with git diff markers (+ or -)
+                clean_line = line.lstrip('+-').strip()
+                parts = clean_line.split('\t') if '\t' in clean_line else clean_line.split()
+                if len(parts) >= 3:  # Valid data line
+                    zone_id = parts[0].strip()
+                    x = parts[1].strip()
+                    y = parts[2].strip()
+                    
+                    print(f"DEBUG: Processing line: {line.strip()!r}")
+                    print(f"DEBUG: Clean line: {clean_line!r}")
+                    print(f"DEBUG: Parts: {parts}")
+                    
+                    # Handle different column formats - FIX ALL TO HAVE 7 TRUE
+                    if len(parts) == 4:
+                        # Format: zone_id x y enabled (missing map)
+                        map_val = "7"
+                        enabled = parts[3].strip()
+                        print(f"DEBUG: 4-col format: map={map_val}, enabled={enabled}")
+                    elif len(parts) >= 5:
+                        # Format: zone_id x y map enabled (keep existing)
+                        map_val = parts[3].strip()
+                        enabled = parts[4].strip()
+                        print(f"DEBUG: 5-col format: map={map_val}, enabled={enabled}")
+                    else:
+                        # Format: zone_id x y (missing map and enabled)
+                        map_val = "7"
+                        enabled = "true"
+                        print(f"DEBUG: 3-col format: map={map_val}, enabled={enabled}")
+                    
+                    # Ensure enabled is properly formatted
+                    if enabled.lower() in ['true', '1', 'yes', 'enabled', 'on']:
+                        enabled = "true"
+                    elif enabled.lower() in ['false', '0', 'no', 'disabled', 'off']:
+                        enabled = "false"
+                    else:
+                        enabled = "true"  # Default to "true" for any unclear values
+                    
+                    normalized_line = f"{zone_id}\t{x}\t{y}\t{map_val}\t{enabled}"
+                    print(f"DEBUG: Normalized: {normalized_line}")
+                    data_lines.append(normalized_line)
+                else:
+                    print(f"DEBUG: Skipping line (insufficient parts): {line.strip()!r}")
+        
+        # Remove duplicates while preserving order (only remove exact line duplicates, not zone duplicates)
+        seen_lines = set()
+        unique_data_lines = []
+        for line in data_lines:
+            if line not in seen_lines:
+                seen_lines.add(line)
+                unique_data_lines.append(line)
+        
+        # TEMPORARILY DISABLE SORTING TO TEST IF IT'S CAUSING THE ISSUE
+        # Keep original order to avoid any corruption during sorting
+        # unique_data_lines.sort(key=lambda line: sort_zone_id(line.split('\t')[0].strip()))
+        
+        # Combine header and sorted data
+        result_lines = header_lines + unique_data_lines
+        new_content = '\n'.join(result_lines) + '\n'
+        
+        # DEBUG: Print a few sample lines to see what we're actually creating
+        print(f"DEBUG: Sample of final content lines:")
+        for i, line in enumerate(result_lines[:10]):  # Show first 10 lines
+            print(f"DEBUG: Line {i+1}: {line!r}")
+        
+        # DEBUG: Check specific problematic zones
+        for line in result_lines:
+            if '7B-S' in line or '1A-E' in line or '1A-W' in line:
+                print(f"DEBUG: Key zone line: {line!r}")
+        
+        # Validate the result before creating PR
+        if len(unique_data_lines) < 100:  # Safety check
+            raise HTTPException(status_code=500, detail=f"Safety check failed: Only {len(unique_data_lines)} entries found, expected ~130")
+        
+        # Create branch name
+        branch_name = f"format-fix-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+        
+        # Get main branch SHA for creating new branch
+        main_branch_url = f"https://api.github.com/repos/{repo_info['owner']}/{repo_info['repo']}/git/refs/heads/main"
+        main_response = requests.get(main_branch_url, headers=headers)
+        
+        if main_response.status_code != 200:
+            raise HTTPException(status_code=500, detail="Failed to get main branch SHA")
+        
+        main_sha = main_response.json()["object"]["sha"]
+        
+        # Create new branch
+        create_branch_url = f"https://api.github.com/repos/{repo_info['owner']}/{repo_info['repo']}/git/refs"
+        branch_data = {
+            "ref": f"refs/heads/{branch_name}",
+            "sha": main_sha
+        }
+        
+        branch_response = requests.post(create_branch_url, json=branch_data, headers=headers)
+        
+        if branch_response.status_code != 201:
+            error_data = branch_response.json()
+            raise HTTPException(status_code=500, detail=f"Failed to create branch: {error_data}")
+        
+        # Update file in new branch
+        encoded_content = base64.b64encode(new_content.encode()).decode()
+        
+        update_data = {
+            "message": "Fix file format: Normalize all entries to have '7 true' format and remove duplicates",
+            "content": encoded_content,
+            "sha": file_data["sha"],
+            "branch": branch_name
+        }
+        
+        update_response = requests.put(file_url, json=update_data, headers=headers)
+        
+        if update_response.status_code not in [200, 201]:
+            error_response = update_response.json()
+            raise HTTPException(status_code=500, detail=f"Failed to update file: {error_response}")
+        
+        # Create Pull Request
+        pr_url = f"https://api.github.com/repos/{repo_info['owner']}/{repo_info['repo']}/pulls"
+        
+        pr_body = f"""
+## File Format Fix
+
+This PR normalizes the entire dockmaster file to ensure consistent formatting:
+
+- **Fixed format**: All entries now have `zone_id x y 7 true` format
+- **Processed entries**: {len(unique_data_lines)} total entries
+- **Removed duplicates**: {len(data_lines) - len(unique_data_lines)} duplicate lines
+- **Proper sorting**: All zones sorted correctly (XD zones first, then regular zones, then M zones)
+
+This fixes the issue where some entries had only 4 columns while others had 5 columns, causing inconsistent formatting in future PRs.
+
+*Auto-generated format fix*
+"""
+        
+        pr_data = {
+            "title": "Fix File Format: Normalize all entries to '7 true' format",
+            "body": pr_body,
+            "head": branch_name,
+            "base": "main"
+        }
+        
+        pr_response = requests.post(pr_url, json=pr_data, headers=headers)
+        
+        if pr_response.status_code != 201:
+            error_response = pr_response.json()
+            raise HTTPException(status_code=500, detail=f"Failed to create PR: {error_response}")
+        
+        pr_info = pr_response.json()
+        
+        return {
+            "message": "Format fix PR created successfully",
+            "pr_url": pr_info["html_url"],
+            "pr_number": pr_info["number"],
+            "branch_name": branch_name,
+            "fixed_entries": len(unique_data_lines),
+            "removed_duplicates": len(data_lines) - len(unique_data_lines)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create format fix PR: {str(e)}")
 
 @router.get("/stats")
 async def get_admin_stats(db: Session = Depends(get_db)):

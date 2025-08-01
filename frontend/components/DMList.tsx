@@ -8,6 +8,7 @@ const DMList = () => {
   const [dockmasters, setDockmasters] = useState<DockmasterEntry[]>([])
   const [pendingSuggestions, setPendingSuggestions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshingFromGitHub, setRefreshingFromGitHub] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { isAdmin } = useAuth()
 
@@ -22,6 +23,7 @@ const DMList = () => {
         apiService.getDockmasters(),
         apiService.getSuggestions('pending')
       ])
+      // Filter out reference points (y=6142) is now handled by the backend
       setDockmasters(dockmasterData)
       setPendingSuggestions(pendingData)
       setError(null)
@@ -31,6 +33,20 @@ const DMList = () => {
       toast.error('Failed to load data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const refreshFromGitHub = async () => {
+    try {
+      setRefreshingFromGitHub(true)
+      const result = await apiService.refreshDockmasters()
+      toast.success(`Refreshed ${result.active_visible_dockmasters} dockmasters from GitHub`)
+      await loadData() // Reload the data after refreshing from GitHub
+    } catch (err) {
+      console.error('Failed to refresh from GitHub:', err)
+      toast.error('Failed to refresh from GitHub')
+    } finally {
+      setRefreshingFromGitHub(false)
     }
   }
 
@@ -113,12 +129,25 @@ const DMList = () => {
             <h3 className="text-lg leading-6 font-medium text-gray-900">
               Current Dockmasters ({dockmasters.length})
             </h3>
-            <button
-              onClick={loadData}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              🔄 Refresh
-            </button>
+            <div className="flex space-x-2">
+                <button
+                  onClick={refreshFromGitHub}
+                  disabled={refreshingFromGitHub || loading}
+                  className="inline-flex items-center px-3 py-2 border border-primary-300 shadow-sm text-sm leading-4 font-medium rounded-md text-primary-700 bg-primary-50 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                >
+                  {refreshingFromGitHub ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600 mr-2" />
+                      Refreshing...
+                    </>
+                  ) : (
+                    <>
+                      🔄 Refresh
+                    </>
+                  )}
+                </button>
+
+            </div>
           </div>
 
           {dockmasters.length > 0 ? (

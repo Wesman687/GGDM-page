@@ -26,11 +26,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Server configuration error', details: 'GG Guild ID not set' })
     }
 
-    console.log('Checking GG membership for user:', {
-      discordId: token.discordId,
-      username: token.username,
-      ggGuildId
-    })
 
     // Get user's Discord guilds with retry and timeout
     const controller = new AbortController()
@@ -58,7 +53,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     clearTimeout(timeoutId)
 
-    console.log('Discord API response status:', response.status)
 
     if (response.status === 401) {
       console.log('Discord access token is invalid or expired')
@@ -86,15 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const guilds = await response.json()
-    console.log('User guilds count:', guilds.length)
-    console.log('User guilds:', guilds.map((g: any) => ({ id: g.id, name: g.name })))
 
     // Check if user is member of GG Discord server
     const isGGMember = guilds.some((guild: any) => guild.id === ggGuildId)
 
     console.log('Is GG Member:', isGGMember)
-    console.log('Looking for guild ID:', ggGuildId)
-    console.log('User guild IDs:', guilds.map((g: any) => g.id))
 
     return res.status(200).json({
       isGGMember,

@@ -66,7 +66,11 @@ export default function SuggestPage() {
           apiService.getDockmasters(),
           apiService.getSuggestions('pending')
         ])
-        setDockmasters(dockmasterData.sort((a, b) => a.zone_id.localeCompare(b.zone_id)))
+        // Filter out reference points (y=6142) and sort
+        const filteredDockmasters = dockmasterData
+          .filter(dm => dm.y !== 6142)
+          .sort((a, b) => a.zone_id.localeCompare(b.zone_id))
+        setDockmasters(filteredDockmasters)
         setPendingSuggestions(pendingData)
       } catch (error) {
         console.error('Failed to load data:', error)
@@ -81,7 +85,7 @@ export default function SuggestPage() {
 
   // Handle URL parameters to pre-populate form
   useEffect(() => {
-    if (router.isReady) {
+    if (router.isReady && dockmasters.length > 0) {
       const { action, zone_id } = router.query
       
       if (action === 'remove' && typeof zone_id === 'string') {
@@ -101,6 +105,19 @@ export default function SuggestPage() {
       }
     }
   }, [router.isReady, router.query, setValue, dockmasters])
+
+  // Also handle the case where URL parameters are present but dockmasters haven't loaded yet
+  useEffect(() => {
+    if (router.isReady && dockmasters.length === 0) {
+      const { action } = router.query
+      
+      // If it's just an add action without needing dockmaster data, we can set it immediately
+      if (action === 'add') {
+        setValue('action', 'add')
+        setFormStep('action-coords')
+      }
+    }
+  }, [router.isReady, router.query, setValue, dockmasters.length])
 
   const watchAction = watch('action')
 
@@ -127,8 +144,8 @@ export default function SuggestPage() {
     // Map boundaries: X: 0-4600, Y: 0-4000
     // Map center: approximately (2700, 2000)
     
-    // Newlands area (XD suffix) - assuming it's a specific region in the northeast
-    if (x >= 3800 && y >= 3200) {
+    // XD zone area - same coordinates as backend
+    if (3000 <= x && x <= 5000 && 2000 <= y && y <= 4000) {
       return 'XD'
     }
     
@@ -149,13 +166,13 @@ export default function SuggestPage() {
 
   // Get book area from zone ID suffix
   const getBookAreaFromZoneId = (zoneId: string): 'N' | 'E' | 'S' | 'W' | 'XD' | null => {
-    const match = zoneId.match(/^(\d+[A-Z])-([A-Z]+)$/)
-    if (!match) return null
-    
-    const suffix = match[2]
-    
-    // XD starts with XD (e.g., XD, XD2, XD3)
-    if (suffix.startsWith('XD')) return 'XD'
+    // Handle XD zone IDs first
+  if (zoneId.startsWith('XD')) return 'XD'
+  
+  const match = zoneId.match(/^(\d+[A-Z])-([NSEW])$/)
+  if (!match) return null
+  
+  const suffix = match[2]
     
     // Cardinal directions - check if suffix ends with the direction
     if (suffix.endsWith('N') || suffix === 'N') return 'N'
@@ -176,6 +193,51 @@ export default function SuggestPage() {
 
       // Determine which book area we're in
       const targetBookArea = getBookAreaFromCoords(x, y)
+      
+      // Special handling for XD zones
+      if (targetBookArea === 'XD') {
+        // For XD zones, just find the next available XD number
+        const xdNums = dockmasters
+          .filter(dm => dm.zone_id.startsWith('XD'))
+          .map(dm => {
+            const match = dm.zone_id.match(/^XD(\d+)$/)
+            return match ? parseInt(match[1], 10) : 0
+          })
+          .filter(num => !isNaN(num) && num > 0)
+        
+        // Find the next available number
+        let counter = 1
+        while (xdNums.includes(counter)) {
+          counter++
+        }
+        
+        // Create a single suggestion for XD zone
+        const xdSuggestion: SuggestedPrefix = {
+          prefix: 'XD',
+          nextSuggested: `XD${counter}`,
+          nearbyDockmasters: dockmasters
+            .filter(dm => dm.zone_id.startsWith('XD'))
+            .map(dm => ({
+              ...dm,
+              distance: calculateDistance(x, y, dm.x, dm.y)
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5),
+          allInBookArea: dockmasters.filter(dm => dm.zone_id.startsWith('XD')),
+          closestDistance: dockmasters
+            .filter(dm => dm.zone_id.startsWith('XD'))
+            .length > 0 ? Math.min(...dockmasters
+              .filter(dm => dm.zone_id.startsWith('XD'))
+              .map(dm => calculateDistance(x, y, dm.x, dm.y))
+            ) : 0,
+          bookArea: 'XD',
+          suffixes: ['XD'],
+          example: `XD${counter}`
+        }
+        
+        setSuggestedPrefixes([xdSuggestion])
+        return
+      }
       
       // Filter dockmasters to only those in the same book area
       const bookAreaDockmasters = dockmasters.filter(dm => {
@@ -259,40 +321,24 @@ export default function SuggestPage() {
         // Check if this Zone ID already exists in ALL dockmasters (not just book area)
         const zoneIdExists = dockmasters.some(dm => dm.zone_id === potentialZoneId)
         
-        // If it exists, handle differently for XD vs cardinal directions
+        // If it exists, handle differently for cardinal directions
         if (zoneIdExists) {
-          if (targetBookArea === 'XD') {
-            // For XD, append numbers after XD (XD2, XD3, etc.)
-            // Find existing suffixes with this prefix
-            const existingSuffixes = dockmasters
-              .filter(dm => dm.zone_id.startsWith(`${prefix}-XD`))
-              .map(dm => dm.zone_id.split('-')[1])
+          // For cardinal directions (N,S,E,W), increment the number before the direction
+          const currentPrefix = prefix // e.g., "9C"
+          const matches = currentPrefix.match(/^(\d+)([A-Z])$/)
+          if (matches) {
+            const [_, num, letter] = matches
+            let newNumber = parseInt(num, 10) + 1
             
-            // Find the next available number
-            let counter = 2
-            while (existingSuffixes.includes(`XD${counter}`)) {
-              counter++
+            // Keep trying new numbers until we find one that doesn't exist
+            while (dockmasters.some(dm => dm.zone_id === `${newNumber}${letter}-${targetBookArea}`)) {
+              newNumber++
             }
             
-            suggestedSuffix = `XD${counter}`
-          } else {
-            // For cardinal directions (N,S,E,W), increment the number before the direction
-            const currentPrefix = prefix // e.g., "9C"
-            const matches = currentPrefix.match(/^(\d+)([A-Z])$/)
-            if (matches) {
-              const [_, num, letter] = matches
-              let newNumber = parseInt(num, 10) + 1
-              
-              // Keep trying new numbers until we find one that doesn't exist
-              while (dockmasters.some(dm => dm.zone_id === `${newNumber}${letter}-${targetBookArea}`)) {
-                newNumber++
-              }
-              
-              // Update the prefix instead of the suffix
-              prefix = `${newNumber}${letter}`
-              // Keep the original directional suffix
-              potentialZoneId = `${prefix}-${targetBookArea}`
-            }
+            // Update the prefix instead of the suffix
+            prefix = `${newNumber}${letter}`
+            // Keep the original directional suffix
+            potentialZoneId = `${prefix}-${targetBookArea}`
           }
         }
         
@@ -676,16 +722,16 @@ export default function SuggestPage() {
                           {...register('zone_id', { 
                             required: 'Zone ID is required',
                             pattern: {
-                              value: /^[0-9]+[A-Z]+-[A-Z]+$/,
-                              message: 'Zone ID format should be like "1A-E" or "4C-N"'
+                              value: /^(XD\d+|\d+[A-Z]+-[NSEW])$/,
+                              message: 'Zone ID format should be like "XD11" or "1A-E"'
                             }
                           })}
                           type="text"
-                          placeholder="e.g., 1A-E, 2B-N, 4C-E"
+                          placeholder="e.g., XD11, 1A-E, 2B-N, 4C-E"
                           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                         />
                         <p className="mt-1 text-xs text-gray-500">
-                          Format: NumberLetter-Letter (e.g., 1A-E, 2B-N). Make sure this Zone ID doesn't already exist.
+                          Format: XD + number (e.g., XD11) or NumberLetter-Direction (e.g., 1A-E, 2B-N). Make sure this Zone ID doesn't already exist.
                         </p>
                         
                         {/* Zone ID suggestions based on coordinates */}

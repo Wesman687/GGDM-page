@@ -13,17 +13,33 @@ def get_github_headers():
             status_code=500, 
             detail="GitHub token not configured. Please set GITHUB_TOKEN in your .env file. Visit: https://github.com/settings/tokens"
         )
-    return {
+    
+    headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json"
     }
+    
+    # Debug output (without exposing token)
+    print("GitHub headers configured with token length:", len(token))
+    print("Token preview (first 4 chars):", token[:4] + "..." if token else "None")
+    
+    return headers
 
 def get_repo_info():
-    return {
+    repo_info = {
         "owner": os.getenv("GITHUB_REPO_OWNER", "LeoPiro"),
         "repo": os.getenv("GITHUB_REPO_NAME", "GG_Dms"),
         "file_path": os.getenv("GITHUB_FILE_PATH", "GG DOCKMASTERS.txt")
     }
+    
+    # Debug output
+    print("GitHub repository configuration:")
+    print(f"Owner: {repo_info['owner']}")
+    print(f"Repo: {repo_info['repo']}")
+    print(f"File path: {repo_info['file_path']}")
+    
+    return repo_info
 
 @router.get("/raw-content")
 async def get_raw_content():

@@ -60,7 +60,12 @@ export interface AdminCreate {
 export const apiService = {
   // GitHub/Dockmasters
   async getDockmasters(): Promise<DockmasterEntry[]> {
-    const response = await api.get('/api/github/dockmasters')
+    const response = await api.get('/api/dockmasters/')
+    return response.data
+  },
+
+  async refreshDockmasters(): Promise<{ message: string, total_dockmasters: number, active_visible_dockmasters: number }> {
+    const response = await api.post('/api/dockmasters/refresh')
     return response.data
   },
 
