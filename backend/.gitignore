@@ -37,3 +37,4 @@ logs/
 # Database
 *.db
 *.sqlite3
+backend/logs/*
