@@ -17,21 +17,22 @@ export default NextAuth({
     async jwt({ token, account, profile }) {
       // Save Discord access token and profile info
       if (account && profile) {
-        token.accessToken = account.access_token
-        token.discordId = profile.id
-        token.username = profile.username
-        token.discriminator = profile.discriminator
-        token.avatar = profile.avatar
+        const discordProfile = profile as any
+        token.accessToken = account.access_token || null
+        token.discordId = discordProfile.id || null
+        token.username = discordProfile.username || null
+        token.discriminator = discordProfile.discriminator || null
+        token.avatar = discordProfile.avatar || null
       }
       return token
     },
     async session({ session, token }) {
       // Send properties to the client
-      session.accessToken = token.accessToken as string
-      session.user.discordId = token.discordId as string
-      session.user.username = token.username as string
-      session.user.discriminator = token.discriminator as string
-      session.user.avatar = token.avatar as string
+      session.accessToken = token.accessToken
+      session.user.discordId = token.discordId
+      session.user.username = token.username
+      session.user.discriminator = token.discriminator
+      session.user.avatar = token.avatar
       return session
     },
   },

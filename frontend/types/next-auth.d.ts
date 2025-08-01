@@ -2,33 +2,33 @@ import NextAuth from "next-auth"
 
 declare module "next-auth" {
   interface Session {
-    accessToken: string
+    accessToken: string | null
     user: {
       id: string
       name: string
       email: string
       image: string
-      discordId: string
-      username: string
-      discriminator: string
-      avatar: string
+      discordId: string | null
+      username: string | null
+      discriminator: string | null
+      avatar: string | null
     }
   }
 
   interface User {
-    discordId: string
-    username: string
-    discriminator: string
-    avatar: string
+    discordId: string | null
+    username: string | null
+    discriminator: string | null
+    avatar: string | null
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    accessToken: string
-    discordId: string
-    username: string
-    discriminator: string
-    avatar: string
+    accessToken: string | null
+    discordId: string | null
+    username: string | null
+    discriminator: string | null
+    avatar: string | null
   }
 }

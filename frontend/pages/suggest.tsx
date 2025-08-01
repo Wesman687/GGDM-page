@@ -192,7 +192,10 @@ export default function SuggestPage() {
       }
 
       // Determine which book area we're in
-      const targetBookArea = getBookAreaFromCoords(x, y)
+      const targetBookArea = getBookAreaFromCoords(x, y) as 'N' | 'E' | 'S' | 'W' | 'XD'
+      
+      // Capture the book area type for use in closures
+      const bookArea: 'N' | 'E' | 'S' | 'W' | 'XD' = targetBookArea
       
       // Special handling for XD zones
       if (targetBookArea === 'XD') {
@@ -309,11 +312,11 @@ export default function SuggestPage() {
         // Check the basic Zone ID and generate suggestion
         let suggestedSuffix = ''
         
-        if (targetBookArea === 'XD') {
+        if (bookArea === 'XD') {
           suggestedSuffix = 'XD'
         } else {
           // For cardinal directions, always suggest the base direction
-          suggestedSuffix = targetBookArea
+          suggestedSuffix = bookArea
         }
         
         let potentialZoneId = `${prefix}-${suggestedSuffix}`
@@ -331,14 +334,14 @@ export default function SuggestPage() {
             let newNumber = parseInt(num, 10) + 1
             
             // Keep trying new numbers until we find one that doesn't exist
-            while (dockmasters.some(dm => dm.zone_id === `${newNumber}${letter}-${targetBookArea}`)) {
+            while (dockmasters.some(dm => dm.zone_id === `${newNumber}${letter}-${bookArea}`)) {
               newNumber++
             }
             
             // Update the prefix instead of the suffix
             prefix = `${newNumber}${letter}`
             // Keep the original directional suffix
-            potentialZoneId = `${prefix}-${targetBookArea}`
+            potentialZoneId = `${prefix}-${bookArea}`
           }
         }
         
