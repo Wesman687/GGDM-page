@@ -1,13 +1,3 @@
 {
-  "projects": [],
-  "builds": [],
-  "rewrites": [],
-  "redirects": [],
-  "headers": [],
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "ignoreCommand": "echo 'ignore'",
-  "outputDirectory": "",
-  "framework": "nextjs",
   "rootDirectory": "frontend"
 }
