@@ -38,3 +38,4 @@ logs/
 *.db
 *.sqlite3
 backend/logs/*
+suggestions.db

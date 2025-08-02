@@ -41,7 +41,8 @@ pids
 coverage/
 .pytest_cache/
 htmlcov/
-
+backend/suggestions.db
+backend/logs/*
 # Build
 dist/
 build/
