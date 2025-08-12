@@ -2,6 +2,7 @@ import React from 'react'
 import Link from 'next/link'
 import DiscordAuth from './DiscordAuth'
 import { useAuth } from '@/lib/auth'
+import StreamlineAIBadge from 'streamlineai-badge'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -22,6 +23,9 @@ export default function Layout({ children, title = 'Dockmaster Portal' }: Layout
                 🚢 Dockmaster Portal
               </h1>
             </div>
+            
+                        <StreamlineAIBadge style="gradient" size="xl" animation="none"   />
+                    
             <div className="flex items-center space-x-8">
               <nav className="flex space-x-8">
                 <Link href="/" className="text-gray-500 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
