@@ -26,6 +26,8 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     accessToken: string | null
+    refreshToken: string | null
+    expiresAt: number | null
     discordId: string | null
     username: string | null
     discriminator: string | null

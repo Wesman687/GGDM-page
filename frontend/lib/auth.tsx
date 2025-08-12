@@ -51,8 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
       
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7000'
-      const response = await axios.get(`${API_BASE_URL}/api/verify-gg-member`, {
+      const response = await axios.get('/api/verify-gg-member', {
         timeout: 8000, // Reduced timeout
         headers: {
           'Cache-Control': 'no-cache'
