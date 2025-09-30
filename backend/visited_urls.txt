@@ -1,0 +1,8 @@
+# Visited URLs Cache
+# This file tracks which script URLs have already been scraped
+# Add URLs here to skip them during scraping
+# Format: one URL per line
+
+# Example URLs (remove these when you start scraping):
+# https://outlands.uorazorscripts.com/script/example-1
+# https://outlands.uorazorscripts.com/script/example-2

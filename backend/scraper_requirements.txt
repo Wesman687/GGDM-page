@@ -1,0 +1,4 @@
+# Scraper Dependencies
+# Install with: pip install -r scraper_requirements.txt
+
+playwright>=1.40.0
