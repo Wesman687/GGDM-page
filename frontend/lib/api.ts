@@ -525,5 +525,87 @@ export const apiService = {
       }
     })
     return response.data
+  },
+
+  // Uncertainty Management
+  async getUncertaintyRequests(userDiscordId?: string): Promise<any> {
+    const response = await api.get('/api/ai/uncertainty/pending-reviews', {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async resolveUncertaintyRequest(requestId: number, resolution: any, userDiscordId?: string): Promise<any> {
+    const response = await api.post(`/api/ai/uncertainty/resolve/${requestId}`, resolution, {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async getUncertaintyStats(userDiscordId?: string): Promise<any> {
+    const response = await api.get('/api/ai/uncertainty/stats', {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  // Intent Management
+  async getIntentPatterns(userDiscordId?: string): Promise<any> {
+    const response = await api.get('/api/ai/intents/patterns', {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async updateIntentPattern(patternId: number, pattern: any, userDiscordId?: string): Promise<any> {
+    const response = await api.put(`/api/ai/intents/patterns/${patternId}`, pattern, {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async createIntentPattern(pattern: any, userDiscordId?: string): Promise<any> {
+    const response = await api.post('/api/ai/intents/patterns', pattern, {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async deleteIntentPattern(patternId: number, userDiscordId?: string): Promise<any> {
+    const response = await api.delete(`/api/ai/intents/patterns/${patternId}`, {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
+  },
+
+  async getIntentAnalytics(userDiscordId?: string): Promise<any> {
+    const response = await api.get('/api/ai/intents/analytics', {
+      params: {
+        user_id: userDiscordId,
+        is_admin: true
+      }
+    })
+    return response.data
   }
 }

@@ -14,6 +14,7 @@ from routes.scripts_additional import router as scripts_additional_router
 from routes.items import router as items_router
 from routes.ai_items import router as ai_items_router
 from routes.ai_uncertainty import router as ai_uncertainty_router
+from routes.ai_intents import router as ai_intents_router
 
 # AI imports
 from ai_models import AskRequest, AskResponse, FeedbackRequest, FeedbackResponse
@@ -65,9 +66,10 @@ app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(dockmasters_router, prefix="/api/dockmasters", tags=["dockmasters"])
 app.include_router(scripts_router, prefix="/api/scripts", tags=["scripts"])
 app.include_router(scripts_additional_router, prefix="/api/scripts", tags=["scripts"])
-app.include_router(items_router, prefix="/api/items", tags=["items"])
+app.include_router(items_router, prefix="/api", tags=["items"])
 app.include_router(ai_items_router, prefix="/api", tags=["ai-items"])
 app.include_router(ai_uncertainty_router, prefix="/api", tags=["ai-uncertainty"])
+app.include_router(ai_intents_router, prefix="/api", tags=["ai-intents"])
 
 @app.get("/")
 async def root():

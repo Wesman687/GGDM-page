@@ -14,7 +14,12 @@ The Admin Script Management system provides comprehensive tools for administrato
 ### Navigation
 - **Main Admin Panel**: `/admin` - Overview and navigation
 - **Script Management**: `/admin-scripts` - Script administration tools
-- **AI Rules Management**: `/admin-ai-rules` - AI behavior configuration
+- **AI Management**: `/admin-ai-management` - Comprehensive AI management interface
+  - **AI Rules**: Configure AI behavior and rules
+  - **Rule Suggestions**: Review user-submitted rule improvements
+  - **Uncertainty Reviews**: Handle uncertain AI requests requiring human input
+  - **Intent Management**: Manage AI intent recognition patterns
+  - **Training Data**: View AI analytics and export training data
 
 ## Script Management Features
 
@@ -120,13 +125,18 @@ Response:
 }
 ```
 
+## AI Management System
+
+### Overview
+The AI Management System provides comprehensive tools for managing AI behavior, learning, and quality assurance. It includes traditional rule management, uncertainty handling, intent recognition, and continuous learning mechanisms.
+
 ## AI Rules Management
 
 ### Purpose
 AI Rules control how the AI assistant behaves when generating scripts. These rules ensure consistent, high-quality output that follows GG Script conventions.
 
 ### Rule Management Interface
-- **Location**: `/admin-ai-rules` page
+- **Location**: `/admin-ai-management` → AI Rules tab
 - **Editor**: Markdown text editor for rule modification
 - **Version Control**: Automatic backups on each save
 - **History**: View and restore previous rule versions
@@ -168,6 +178,123 @@ AI Rules control how the AI assistant behaves when generating scripts. These rul
 GET /api/scripts/admin/ai-rules
 PUT /api/scripts/admin/ai-rules
 GET /api/scripts/admin/ai-rules/history
+```
+
+## Uncertainty Management
+
+### Purpose
+The Uncertainty Management system ensures the AI never makes assumptions when it's unsure about user intent. When confidence falls below certain thresholds, requests are automatically flagged for admin review.
+
+### Confidence Thresholds
+- **High Confidence (0.8+)**: AI proceeds normally
+- **Medium Confidence (0.5-0.8)**: AI asks user for confirmation
+- **Low Confidence (0.3-0.5)**: Request admin review
+- **Very Low Confidence (<0.3)**: Immediate admin review (high priority)
+
+### Admin Review Process
+1. **Automatic Flagging**: Uncertain requests appear in admin queue
+2. **Priority System**: High uncertainty gets higher priority
+3. **Review Interface**: Admins see user query, detected intent, confidence score
+4. **Resolution**: Confirm, correct, or expand intent understanding
+5. **Learning**: Admin feedback improves future AI responses
+
+### Uncertainty Review Interface
+- **Location**: `/admin-ai-management` → Uncertainty Reviews tab
+- **Queue Display**: Pending requests with priority indicators
+- **Review Modal**: Full context and resolution interface
+- **Learning Integration**: Admin notes improve AI learning
+
+### API Endpoints
+```http
+GET /api/ai/uncertainty/pending-reviews
+GET /api/ai/uncertainty/stats
+POST /api/ai/uncertainty/resolve/{id}
+POST /api/ai/uncertainty/analyze
+GET /api/ai/uncertainty/admin-dashboard
+```
+
+## Intent Management
+
+### Purpose
+Intent Management allows admins to view, edit, and optimize how the AI recognizes and responds to different types of user requests.
+
+### Intent Pattern Structure
+Each intent pattern includes:
+- **Keywords**: Words that trigger the intent
+- **Tags**: Categories for organization
+- **Context Needed**: Required context for the intent
+- **Requirements**: Specific requirements for the intent
+- **Confidence Score**: AI's confidence in recognizing this intent
+- **Usage Count**: How often this intent is triggered
+
+### Intent Management Interface
+- **Location**: `/admin-ai-management` → Intent Management tab
+- **Pattern Overview**: View all intents with usage statistics
+- **Edit Interface**: Modify keywords, tags, context, requirements
+- **Analytics**: Track intent effectiveness and usage patterns
+
+### Management Operations
+1. **View Patterns**: Browse all intent patterns with statistics
+2. **Edit Patterns**: Modify pattern components to improve accuracy
+3. **Monitor Usage**: Track which patterns are most effective
+4. **Optimize Performance**: Improve intent detection based on analytics
+
+### API Endpoints
+```http
+GET /api/ai/intents/patterns
+GET /api/ai/intents/patterns/{id}
+PUT /api/ai/intents/patterns/{id}
+POST /api/ai/intents/patterns
+DELETE /api/ai/intents/patterns/{id}
+GET /api/ai/intents/analytics
+GET /api/ai/intents/learning-logs
+```
+
+## Self-Learning System
+
+### Wiki Knowledge Integration
+- **Automatic Scraping**: Scrapes UO Outlands wiki for game mechanics
+- **Knowledge Extraction**: Extracts keywords, mechanics, and intent patterns
+- **Pattern Enhancement**: Uses wiki data to expand intent patterns
+- **Confidence Boosting**: Wiki-backed patterns get higher confidence
+
+### Usage-Based Learning
+- **Pattern Usage Tracking**: Monitors which patterns are used most
+- **Success Rate Analysis**: Tracks success rate of each pattern
+- **Confidence Adjustment**: Adjusts confidence based on outcomes
+- **Pattern Evolution**: Expands patterns based on usage and feedback
+
+### Admin Feedback Integration
+- **Intent Confirmation**: Admins confirm or correct detected intents
+- **Learning Notes**: Admins add context and learning notes
+- **Pattern Updates**: System updates patterns based on admin feedback
+- **Audit Trail**: Complete history of admin modifications
+
+## Training Data Management
+
+### Purpose
+The Training Data system collects comprehensive data from AI interactions for analysis, export, and potential future model training.
+
+### Data Collection
+- **User Queries**: All questions asked by users
+- **AI Responses**: Generated code and explanations
+- **Admin Reviews**: Approvals, modifications, rejections
+- **Feedback**: User ratings and comments
+- **Intent Analysis**: Intent recognition and confidence data
+- **Uncertainty Data**: Requests requiring admin review
+
+### Analytics Dashboard
+- **Location**: `/admin-ai-management` → Training Data tab
+- **Key Metrics**: Total interactions, approval rates, correction patterns
+- **Export Functionality**: Download training data for analysis
+- **Trend Analysis**: Performance trends over time
+
+### API Endpoints
+```http
+GET /api/scripts/ai/training-analytics
+POST /api/scripts/admin/training-data/export
+GET /api/scripts/ai/training-data-quality
+GET /api/admin/performance-monitoring
 ```
 
 ## Script Quality Management
@@ -249,12 +376,19 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 - AI interactions
 - Rating submissions
 - Feedback submissions
+- **Intent recognition patterns**
+- **Uncertainty request patterns**
+- **Admin review interactions**
 
 #### Analytics Available
 - Most active users
 - Script submission trends
 - AI usage patterns
 - Rating distribution
+- **Intent effectiveness metrics**
+- **Uncertainty resolution times**
+- **Admin review workload**
+- **Learning improvement rates**
 
 ## Database Management
 
@@ -271,6 +405,12 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 - Added `language` column
 - Added `weight` and `is_jasown_rating` columns
 - Created `ai_interaction_reviews` table
+- **Created `intent_patterns` table**
+- **Created `intent_learning_logs` table**
+- **Created `uncertainty_requests` table**
+- **Created `admin_review_queue` table**
+- **Created `learning_confirmations` table**
+- **Created `wiki_knowledge` table**
 
 ### 2. Data Integrity
 
@@ -330,17 +470,24 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 
 #### Daily Tasks
 - Review pending AI interactions
+- **Review uncertainty requests requiring admin input**
+- **Monitor intent pattern effectiveness**
 - Monitor system health
 - Check for new script submissions
 
 #### Weekly Tasks
 - Review analytics and trends
+- **Review intent pattern usage and effectiveness**
+- **Update intent patterns based on game changes**
 - Update AI rules if needed
 - Clean up old data
 - Performance optimization
 
 #### Monthly Tasks
 - Comprehensive system review
+- **Intent pattern optimization and cleanup**
+- **Uncertainty threshold tuning based on admin feedback**
+- **Wiki knowledge base updates and validation**
 - Database optimization
 - Security audit
 - Feature planning
@@ -366,6 +513,18 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 2. Check AI service restart
 3. Confirm rule format validity
 4. Review service logs
+
+#### High Uncertainty Rates
+1. **Review intent patterns for completeness**
+2. **Check for new game mechanics not covered**
+3. **Update confidence thresholds if needed**
+4. **Review admin feedback for pattern improvements**
+
+#### Intent Recognition Issues
+1. **Check keyword lists for relevance**
+2. **Review tag organization and consistency**
+3. **Validate context requirements**
+4. **Monitor usage patterns and effectiveness**
 
 ### Error Resolution
 
@@ -396,12 +555,19 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 - **Trend Analysis**: Long-term usage trends
 - **Performance Insights**: System performance metrics
 - **User Behavior**: Detailed user activity analysis
+- **Intent Analytics**: Intent recognition effectiveness metrics
+- **Uncertainty Analysis**: Uncertainty patterns and resolution metrics
+- **Learning Analytics**: System improvement tracking
 
 #### AI Improvements
 - **Custom Training**: Train on approved scripts
 - **Advanced Rules**: More sophisticated rule system
 - **Performance Optimization**: Faster AI responses
 - **Quality Metrics**: AI response quality tracking
+- **Advanced Intent Recognition**: Machine learning-based intent classification
+- **Predictive Uncertainty**: Pre-calculate uncertainty for common queries
+- **Automated Learning**: Self-improving intent patterns
+- **Real-time Wiki Integration**: Live wiki knowledge updates
 
 ### Integration Opportunities
 
@@ -425,4 +591,4 @@ ALTER TABLE script_ratings ADD COLUMN is_jasown_rating BOOLEAN DEFAULT FALSE;
 3. Contact system administrators
 4. Submit issues through feedback system
 
-The Admin Script Management system is designed to provide comprehensive control over script quality, AI behavior, and user experience while maintaining security and performance standards.
+The Admin Script Management system is designed to provide comprehensive control over script quality, AI behavior, intent recognition, uncertainty management, and user experience while maintaining security and performance standards. The system continuously learns and improves through admin oversight and user feedback.

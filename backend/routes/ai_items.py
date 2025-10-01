@@ -184,23 +184,31 @@ async def analyze_user_request(
         # Analyze intent
         intent_analysis = analyze_user_intent_with_items(user_query)
         
-        # Get relevant items
+        # Get relevant items using direct SQLite queries
         relevant_items = []
+        conn = sqlite3.connect('suggestions.db')
+        cursor = conn.cursor()
+        
         for keyword in intent_analysis['keywords']:
-            items = db.query(ItemsDB).filter(
-                or_(
-                    ItemsDB.name.ilike(f'%{keyword}%'),
-                    ItemsDB.description.ilike(f'%{keyword}%')
-                )
-            ).limit(5).all()
+            cursor.execute('''
+                SELECT id, name, item_id, description, category, usage_count
+                FROM items
+                WHERE name LIKE ? OR description LIKE ?
+                LIMIT 5
+            ''', (f'%{keyword}%', f'%{keyword}%'))
+            
+            items = cursor.fetchall()
             relevant_items.extend(items)
+        
+        conn.close()
         
         # Remove duplicates
         seen = set()
         unique_items = []
         for item in relevant_items:
-            if item.id not in seen:
-                seen.add(item.id)
+            item_id = item[0]  # First element is the id
+            if item_id not in seen:
+                seen.add(item_id)
                 unique_items.append(item)
         
         # Analyze missing information
@@ -211,11 +219,14 @@ async def analyze_user_request(
         }
         
         for item in unique_items:
-            if not item.item_id or item.item_id == 0:
-                missing_info['missing_ids'].append(item.name)
-            if not item.name or item.name.startswith('item_'):
-                missing_info['missing_names'].append(f"ID {item.item_id}")
-            if not item.item_id or not item.name or item.name.startswith('item_'):
+            # item is a tuple: (id, name, item_id, description, category, usage_count)
+            item_id, name, item_id_val, description, category, usage_count = item
+            
+            if not item_id_val or item_id_val == 0:
+                missing_info['missing_ids'].append(name)
+            if not name or name.startswith('item_'):
+                missing_info['missing_names'].append(f"ID {item_id_val}")
+            if not item_id_val or not name or name.startswith('item_'):
                 missing_info['incomplete_items'].append(item)
         
         # Generate intelligent questions
@@ -312,37 +323,55 @@ async def update_item_from_ai(
         if not item_name:
             raise HTTPException(status_code=400, detail="Item name is required")
         
-        # Check if item exists
-        existing_item = db.query(ItemsDB).filter(
-            or_(
-                ItemsDB.name == item_name,
-                ItemsDB.item_id == item_id
-            )
-        ).first()
+        # Check if item exists using direct SQLite query
+        conn = sqlite3.connect('suggestions.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, item_id, hue, description, category, usage_count
+            FROM items
+            WHERE name = ? OR item_id = ?
+        ''', (item_name, item_id))
+        
+        existing_item = cursor.fetchone()
         
         if existing_item:
             # Update existing item
-            if item_id and not existing_item.item_id:
-                existing_item.item_id = item_id
-            if hue is not None and not existing_item.hue:
-                existing_item.hue = hue
-            if description and not existing_item.description:
-                existing_item.description = description
-            existing_item.usage_count += 1
+            item_id_val, name, existing_item_id, existing_hue, existing_desc, category, usage_count = existing_item
+            
+            update_fields = []
+            update_values = []
+            
+            if item_id and not existing_item_id:
+                update_fields.append('item_id = ?')
+                update_values.append(item_id)
+            if hue is not None and not existing_hue:
+                update_fields.append('hue = ?')
+                update_values.append(hue)
+            if description and not existing_desc:
+                update_fields.append('description = ?')
+                update_values.append(description)
+            
+            # Always increment usage count
+            update_fields.append('usage_count = ?')
+            update_values.append(usage_count + 1)
+            update_values.append(item_id_val)  # For WHERE clause
+            
+            if update_fields:
+                cursor.execute(f'''
+                    UPDATE items 
+                    SET {', '.join(update_fields)}
+                    WHERE id = ?
+                ''', update_values)
         else:
             # Create new item
-            new_item = ItemsDB(
-                name=item_name,
-                item_id=item_id or 0,
-                hue=hue or 0,
-                description=description or f"AI-discovered item: {item_name}",
-                usage_count=1,
-                category_id=7,  # Miscellaneous
-                is_verified=False
-            )
-            db.add(new_item)
+            cursor.execute('''
+                INSERT INTO items (name, item_id, hue, description, category, usage_count)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (item_name, item_id or 0, hue or 0, description or f"AI-discovered item: {item_name}", 'unknown', 1))
         
-        db.commit()
+        conn.commit()
+        conn.close()
         
         return {
             'success': True,
@@ -376,26 +405,36 @@ async def get_context_for_script_generation(
         if intent == 'fishing':
             intent_keywords = ['fishing', 'fish', 'net', 'pole', 'boat', 'mib', 'frenzy', 'bait']
         elif intent == 'mining':
-            intent_keywords = ['mining', 'mine', 'ore', 'pickaxe', 'vein', 'gems']
+            intent_keywords = ['mining', 'mine', 'ore', 'pickaxe', 'ignots']
         elif intent == 'combat':
             intent_keywords = ['combat', 'weapon', 'armor', 'potion', 'bandage']
         
+        # Get relevant items using direct SQLite queries
         relevant_items = []
+        conn = sqlite3.connect('suggestions.db')
+        cursor = conn.cursor()
+        
         for keyword in intent_keywords:
-            items = db.query(ItemsDB).filter(
-                or_(
-                    ItemsDB.name.ilike(f'%{keyword}%'),
-                    ItemsDB.description.ilike(f'%{keyword}%')
-                )
-            ).order_by(ItemsDB.usage_count.desc()).limit(5).all()
+            cursor.execute('''
+                SELECT id, name, item_id, hue, description, category, usage_count
+                FROM items
+                WHERE name LIKE ? OR description LIKE ?
+                ORDER BY usage_count DESC
+                LIMIT 5
+            ''', (f'%{keyword}%', f'%{keyword}%'))
+            
+            items = cursor.fetchall()
             relevant_items.extend(items)
+        
+        conn.close()
         
         # Remove duplicates
         seen = set()
         unique_items = []
         for item in relevant_items:
-            if item.id not in seen:
-                seen.add(item.id)
+            item_id = item[0]  # First element is the id
+            if item_id not in seen:
+                seen.add(item_id)
                 unique_items.append(item)
         
         # Build context
@@ -404,12 +443,12 @@ async def get_context_for_script_generation(
             'user_requirements': user_requirements,
             'available_items': [
                 {
-                    'name': item.name,
-                    'item_id': item.item_id,
-                    'hue': item.hue,
-                    'description': item.description,
-                    'usage_count': item.usage_count,
-                    'is_verified': item.is_verified
+                    'name': item[1],  # name
+                    'item_id': item[2],  # item_id
+                    'hue': item[3],  # hue
+                    'description': item[4],  # description
+                    'usage_count': item[6],  # usage_count
+                    'is_verified': True  # Default to verified for now
                 } for item in unique_items[:15]
             ],
             'item_count': len(unique_items),
@@ -429,14 +468,41 @@ async def validate_item_reference(
 ):
     """Validate item name/ID combination"""
     try:
-        # Search for item
-        query = db.query(ItemsDB)
-        if item_id:
-            query = query.filter(ItemsDB.item_id == item_id)
-        if name:
-            query = query.filter(ItemsDB.name.ilike(f'%{name}%'))
+        # Search for item using direct SQLite query
+        conn = sqlite3.connect('suggestions.db')
+        cursor = conn.cursor()
         
-        items = query.limit(5).all()
+        if item_id and name:
+            cursor.execute('''
+                SELECT id, name, item_id, hue, description, category, usage_count
+                FROM items
+                WHERE item_id = ? AND name LIKE ?
+                LIMIT 5
+            ''', (item_id, f'%{name}%'))
+        elif item_id:
+            cursor.execute('''
+                SELECT id, name, item_id, hue, description, category, usage_count
+                FROM items
+                WHERE item_id = ?
+                LIMIT 5
+            ''', (item_id,))
+        elif name:
+            cursor.execute('''
+                SELECT id, name, item_id, hue, description, category, usage_count
+                FROM items
+                WHERE name LIKE ?
+                LIMIT 5
+            ''', (f'%{name}%',))
+        else:
+            conn.close()
+            return {
+                'valid': False,
+                'message': 'Either name or item_id must be provided',
+                'suggestions': []
+            }
+        
+        items = cursor.fetchall()
+        conn.close()
         
         if not items:
             return {
@@ -448,7 +514,8 @@ async def validate_item_reference(
         # Check for exact match
         exact_match = None
         for item in items:
-            if item.name.lower() == name.lower() and item.item_id == item_id:
+            # item is a tuple: (id, name, item_id, hue, description, category, usage_count)
+            if item[1].lower() == name.lower() and item[2] == item_id:
                 exact_match = item
                 break
         
@@ -456,11 +523,11 @@ async def validate_item_reference(
             return {
                 'valid': True,
                 'item': {
-                    'name': exact_match.name,
-                    'item_id': exact_match.item_id,
-                    'hue': exact_match.hue,
-                    'category': exact_match.category_id,
-                    'is_verified': exact_match.is_verified
+                    'name': exact_match[1],  # name
+                    'item_id': exact_match[2],  # item_id
+                    'hue': exact_match[3],  # hue
+                    'category': exact_match[5],  # category
+                    'is_verified': True  # Default to verified
                 },
                 'suggestions': []
             }
@@ -469,11 +536,11 @@ async def validate_item_reference(
         suggestions = []
         for item in items:
             suggestions.append({
-                'name': item.name,
-                'item_id': item.item_id,
-                'hue': item.hue,
-                'is_verified': item.is_verified,
-                'match_type': 'exact_id' if item.item_id == item_id else 'name_match'
+                'name': item[1],  # name
+                'item_id': item[2],  # item_id
+                'hue': item[3],  # hue
+                'is_verified': True,  # Default to verified
+                'match_type': 'exact_id' if item[2] == item_id else 'name_match'
             })
         
         return {
