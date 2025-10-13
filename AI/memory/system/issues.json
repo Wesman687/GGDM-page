@@ -1,0 +1,123 @@
+{
+  "known_issues": [
+    {
+      "id": "issue_001",
+      "title": "Discord rate limiting on membership checks",
+      "severity": "medium",
+      "status": "mitigated",
+      "discovered": "2025-10-01",
+      "description": "Discord API rate limits can cause authentication delays during GG membership verification",
+      "symptoms": [
+        "Slow login times",
+        "Intermittent auth failures",
+        "429 rate limit errors from Discord API"
+      ],
+      "workaround": {
+        "description": "5-minute membership cache + exponential backoff retry",
+        "implementation": [
+          "frontend/lib/auth.tsx - useAuth hook with caching",
+          "frontend/pages/api/verify-gg-member.ts - retry logic with exponential backoff",
+          "Max 5 retry attempts with delays: 1s, 1.5s, 2.25s, 3.3s, 5s"
+        ],
+        "effectiveness": "Reduces API calls by ~80%, handles transient failures"
+      },
+      "permanent_solution": "Consider Redis caching for multi-instance deployments",
+      "priority": "low",
+      "notes": "Current solution sufficient for single-instance deployment"
+    },
+    {
+      "id": "issue_002",
+      "title": "FAISS index loading on cold start",
+      "severity": "low",
+      "status": "documented",
+      "discovered": "2025-10-05",
+      "description": "FAISS index takes 1-2 seconds to load on backend startup",
+      "symptoms": [
+        "First AI query slower than subsequent ones",
+        "Backend startup time increased"
+      ],
+      "workaround": {
+        "description": "Index loaded once at startup and cached in memory",
+        "implementation": "backend/main.py - AI initialization in startup event",
+        "effectiveness": "After initial load, all queries are fast"
+      },
+      "permanent_solution": "Pre-warm index or implement lazy loading with user feedback",
+      "priority": "low",
+      "notes": "Only affects first query after restart"
+    }
+  ],
+  "resolved_issues": [
+    {
+      "id": "resolved_001",
+      "title": "Separate AI service complexity",
+      "severity": "high",
+      "status": "resolved",
+      "discovered": "2025-09-15",
+      "resolved": "2025-10-01",
+      "description": "Running separate AI service on port 7001 caused deployment complexity and latency",
+      "solution": {
+        "approach": "Consolidated AI service into main backend on port 7000",
+        "implementation": [
+          "Created ai_*.py modules in backend/",
+          "Updated routes to use direct AI calls",
+          "Removed separate AI service files"
+        ],
+        "benefits": [
+          "Simplified deployment (2 services instead of 3)",
+          "Reduced latency (no proxy overhead)",
+          "Easier debugging and monitoring",
+          "Lower resource usage"
+        ]
+      },
+      "documentation": "AI/CONSOLIDATION_SUMMARY.md"
+    },
+    {
+      "id": "resolved_002",
+      "title": "Script rating not updating in real-time",
+      "severity": "medium",
+      "status": "resolved",
+      "discovered": "2025-10-10",
+      "resolved": "2025-10-11",
+      "description": "User ratings not reflected immediately in UI after submission",
+      "solution": {
+        "approach": "Added optimistic UI update + background sync",
+        "implementation": "frontend/pages/scripts/[id].tsx - immediate state update on rating submission",
+        "testing": "Verified with multiple users, rapid rating changes"
+      }
+    }
+  ],
+  "technical_debt": [
+    {
+      "id": "debt_001",
+      "title": "No comprehensive test suite",
+      "severity": "medium",
+      "description": "Limited automated testing coverage",
+      "impact": "Regression risk on changes",
+      "plan": "Add tests incrementally for new features, prioritize critical paths",
+      "priority": "medium"
+    },
+    {
+      "id": "debt_002",
+      "title": "SQLite scaling limits",
+      "severity": "low",
+      "description": "SQLite sufficient for current scale but may need migration at higher traffic",
+      "impact": "Potential performance bottleneck at scale",
+      "plan": "Monitor performance, migrate to PostgreSQL if needed",
+      "priority": "low",
+      "threshold": "Monitor when concurrent users > 100"
+    }
+  ],
+  "monitoring": {
+    "health_checks": [
+      "Backend: curl http://localhost:7000/health",
+      "Database: sqlite3 suggestions.db 'SELECT COUNT(*) FROM scripts_cache;'",
+      "FAISS: sqlite3 ai_service.db 'SELECT COUNT(*) FROM rag_chunks;'"
+    ],
+    "performance_metrics": [
+      "AI response time (target: <3s)",
+      "API response time (target: <200ms)",
+      "Database query time (target: <100ms)"
+    ]
+  }
+}
+

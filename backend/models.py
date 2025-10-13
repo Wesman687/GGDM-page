@@ -68,6 +68,9 @@ class ScriptCreate(BaseModel):
     description: Optional[str] = Field(None, description="Script description")
     code: str = Field(..., description="Script code content")
     exe_download_url: Optional[str] = Field(None, description="Optional .exe download URL for Python scripts")
+    parent_script_id: Optional[str] = Field(None, description="ID of parent script if this is a companion")
+    is_companion: bool = Field(default=False, description="True if this is a companion script")
+    execution_order: Optional[int] = Field(None, description="Execution order for companion scripts")
 
 class ScriptUpdate(BaseModel):
     title: Optional[str] = None
@@ -77,6 +80,9 @@ class ScriptUpdate(BaseModel):
     description: Optional[str] = None
     code: Optional[str] = None
     exe_download_url: Optional[str] = None
+    parent_script_id: Optional[str] = None
+    is_companion: Optional[bool] = None
+    execution_order: Optional[int] = None
 
 class Script(BaseModel):
     id: str
@@ -98,6 +104,9 @@ class Script(BaseModel):
     is_featured: bool
     created_at: datetime
     updated_at: datetime
+    parent_script_id: Optional[str] = None
+    is_companion: bool = False
+    execution_order: Optional[int] = None
     created_by: Optional[str]
     approved_by: Optional[str]
     approved_at: Optional[datetime]

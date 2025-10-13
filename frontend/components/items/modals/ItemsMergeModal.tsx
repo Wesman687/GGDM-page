@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Item, ItemCategory } from '../../../types/items';
+import { isNumericId } from '../../../utils/items/itemHelpers';
 
 interface ItemsMergeModalProps {
   item: Item | null;
@@ -48,8 +49,8 @@ export function ItemsMergeModal({
       setError('');
 
       try {
-        // Use the existing search endpoint
-        const response = await fetch(`http://localhost:7000/api/items/items?search=${encodeURIComponent(query.trim())}&limit=10`);
+        // Use the dedicated search endpoint
+        const response = await fetch(`http://localhost:7000/api/items/items/search/${encodeURIComponent(query.trim())}?limit=10`);
         if (response.ok) {
           const data = await response.json();
           setSearchResults(data.items || []);
@@ -92,20 +93,55 @@ export function ItemsMergeModal({
         setError('Merge failed. Please try again.');
       }
     } else if (searchQuery.trim()) {
-      // Create new item with the provided data
+      // Create new item with the provided data or fix current item
       try {
         let updateData: any = {
-          name: item.name,
-          item_id: item.item_id,
           category_id: item.category_id,
           description: item.description
         };
 
-        // Add the missing data
-        if (!item.item_id || item.item_id === 0) {
-          updateData.item_id = parseInt(searchQuery.trim());
-        } else if (!item.name || item.name.startsWith('item_')) {
+        // Determine what we're fixing based on the current item state
+        const hasNumericName = item.name && isNumericId(item.name);
+        const hasRealName = item.name && !isNumericId(item.name);
+        const hasId = item.item_id !== null && item.item_id !== undefined;
+
+        if (hasNumericName && !hasId) {
+          // Item has numeric/hex name but no ID - move name to ID and set new name
+          let itemIdValue;
+          if (item.name.startsWith('0x')) {
+            itemIdValue = parseInt(item.name, 16); // Convert hex to int
+          } else {
+            itemIdValue = parseInt(item.name);
+          }
+          updateData.item_id = itemIdValue;
           updateData.name = searchQuery.trim();
+        } else if (!hasRealName && hasId) {
+          // Item has ID but no real name - set the name
+          updateData.name = searchQuery.trim();
+        } else if (hasRealName && !hasId) {
+          // Item has real name but no ID - add the ID
+          if (isNumericId(searchQuery.trim())) {
+            if (searchQuery.trim().startsWith('0x')) {
+              updateData.item_id = parseInt(searchQuery.trim(), 16);
+            } else {
+              updateData.item_id = parseInt(searchQuery.trim());
+            }
+          } else {
+            // If search query is not numeric, treat it as a new name
+            updateData.name = searchQuery.trim();
+          }
+        } else if (!hasRealName && !hasId) {
+          // Item has neither - check if search query is numeric or hex
+          if (isNumericId(searchQuery.trim())) {
+            if (searchQuery.trim().startsWith('0x')) {
+              updateData.item_id = parseInt(searchQuery.trim(), 16);
+            } else {
+              updateData.item_id = parseInt(searchQuery.trim());
+            }
+            updateData.name = ''; // Will need to be filled later
+          } else {
+            updateData.name = searchQuery.trim();
+          }
         }
 
         const success = await onUpdateItem(item.id, updateData);
@@ -147,17 +183,26 @@ export function ItemsMergeModal({
           {/* Search */}
           <div>
             <div className="text-sm text-gray-600 mb-1">
-              {(!item.item_id || item.item_id === 0) ? 'Find by ID' : 'Find by Name'}
+              {(() => {
+                const hasNumericName = item.name && isNumericId(item.name);
+                const hasRealName = item.name && !isNumericId(item.name);
+                const hasId = item.item_id !== null && item.item_id !== undefined;
+                
+                if (hasNumericName && !hasId) {
+                  return 'Enter item name (ID will be moved from name field)';
+                } else if (!hasRealName && hasId) {
+                  return 'Enter item name';
+                } else if (!hasRealName && !hasId) {
+                  return 'Enter item name or ID';
+                }
+                return 'Find by ID or Name';
+              })()}
             </div>
             <input
-              type={(!item.item_id || item.item_id === 0) ? 'number' : 'text'}
+              type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={
-                (!item.item_id || item.item_id === 0) 
-                  ? 'Enter ID...' 
-                  : 'Enter name...'
-              }
+              placeholder="Enter name or ID..."
               className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             
@@ -196,7 +241,20 @@ export function ItemsMergeModal({
                   onClick={handleMergeOrCreate}
                   className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
                 >
-                  Create New
+                  {(() => {
+                    const hasNumericName = item.name && isNumericId(item.name);
+                    const hasRealName = item.name && !isNumericId(item.name);
+                    const hasId = item.item_id !== null && item.item_id !== undefined;
+                    
+                    if (hasNumericName && !hasId) {
+                      return 'Fix Item (Move ID & Set Name)';
+                    } else if (!hasRealName && hasId) {
+                      return 'Set Name';
+                    } else if (!hasRealName && !hasId) {
+                      return 'Set Name/ID';
+                    }
+                    return 'Create New';
+                  })()}
                 </button>
               )}
             </div>

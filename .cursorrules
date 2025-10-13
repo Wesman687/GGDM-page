@@ -1,0 +1,647 @@
+# DM Portal - Cursor Rules
+
+## 🎯 Project Context
+- **Project**: DM Portal - UO Outlands Community Platform
+- **Stack**: Next.js (TypeScript) + FastAPI (Python) + SQLite + FAISS + OpenAI
+- **Architecture**: CONSOLIDATED backend (port 7000) includes AI - NO separate AI service
+- **Auth**: Discord OAuth → NextAuth → GG membership verification
+
+## 📚 Required Reading Before ANY Changes
+1. **ALWAYS check** `/AI/.cursorrules` (this file) first
+2. **ALWAYS consult** `/AI/MEMORY_BANK.md` for quick reference
+3. **ALWAYS review** `/AI/COMPREHENSIVE_ARCHITECTURE.md` for system understanding
+4. **ALWAYS update** `/AI/status.md` after completing work
+5. **For new features**: Use `/AI/task_template.md` pattern
+
+## 🏗️ Architecture Rules (STRICT)
+
+### Backend (FastAPI - Python)
+- **NO type hints** - Keep Python code clean without type annotations
+- **Pydantic validation** - ALL inputs MUST use Pydantic models for validation
+- **SQLAlchemy ONLY** - NO raw SQL queries (prevents SQL injection)
+- **All endpoints require**: `user_id: str = Query(...)` (Discord ID from session)
+- **Admin endpoints require**: `is_admin: bool = Query(...)` parameter
+- **Error handling**: Use FastAPI HTTPException with proper status codes
+  ```python
+  # CORRECT
+  raise HTTPException(status_code=404, detail="Script not found")
+  
+  # WRONG
+  return {"error": "Script not found"}
+  ```
+- **Database sessions**: Use `Depends(get_db)` for all database operations
+- **Return types**: Use Pydantic response models in `response_model`
+
+### Frontend (Next.js - TypeScript)
+- **Interfaces over types** - Always use `interface` instead of `type` for objects
+  ```typescript
+  // CORRECT
+  interface Script {
+    id: string;
+    title: string;
+  }
+  
+  // WRONG
+  type Script = {
+    id: string;
+    title: string;
+  }
+  ```
+- **NextAuth for auth** - Always use `useSession()` for auth state
+- **API calls include auth**: 
+  ```typescript
+  axios.get('/api/scripts', {
+    params: {
+      user_id: session.user.discordId,
+      is_admin: isAdmin
+    }
+  })
+  ```
+- **No `alert()`** - Use Modal components for user feedback
+- **Error handling**: Standardized error display in UI
+  ```typescript
+  try {
+    // API call
+  } catch (error) {
+    if (error.response?.status === 401) {
+      // Auth expired - sign out
+    } else if (error.response?.status === 403) {
+      // Show "Not authorized" modal
+    } else {
+      // Generic error modal
+    }
+  }
+  ```
+
+### AI System Rules
+- **RAG context**: 60% GG Scripts (priority), 40% other sources
+- **Top-K**: 8 chunks retrieved
+- **Max context**: 16,000 characters
+- **Confidence thresholds**:
+  - High (≥0.8): Proceed normally
+  - Medium (0.5-0.8): Ask user confirmation
+  - Low (0.3-0.5): Admin review queue
+  - Very Low (<0.3): Immediate high-priority admin review
+- **FAISS + SQLite**: All AI data in consolidated backend
+
+## 🔒 Critical Data Rules (ENFORCE)
+
+### Scripts System
+```python
+# ALWAYS set is_approved=False for user uploads
+script.is_approved = False
+
+# Jasown scripts get auto-approval + weighted rating
+if script.author.lower() in ["jasown", "jasown scripts"]:
+    script.is_approved = True
+    script.rating_average = 5.0
+    script.rating_count = 5
+    # Create weighted rating (weight=5)
+```
+
+### Tag Limits
+- **Maximum 3 tags** per script - ENFORCE in validation
+```python
+if len(tags) > 3:
+    raise HTTPException(400, detail="Maximum 3 tags allowed")
+```
+
+### Authentication Requirements
+- **All API calls** must include `user_id` (Discord ID)
+- **Admin operations** must verify admin status server-side
+- **Never trust client** - Always validate on backend
+- **GG membership cache**: 5 minutes maximum
+
+## 📝 Code Style & Format (STRICT)
+
+### Naming Conventions
+- **Python**: `snake_case` for functions, variables, files
+- **TypeScript**: `camelCase` for variables, `PascalCase` for components/interfaces
+- **Files**: 
+  - Components: `PascalCase.tsx` (e.g., `ScriptCard.tsx`)
+  - Utils: `camelCase.ts` (e.g., `apiClient.ts`)
+  - Backend: `snake_case.py` (e.g., `ai_rag.py`)
+
+### Auto-Formatting
+- **Python**: Use `black` formatter (line length 100)
+- **TypeScript/React**: Use `prettier` with project config
+- **Run before commit**: Format all changed files
+
+### Documentation (REQUIRED)
+- **Every function MUST have docstring/comment**:
+  ```python
+  def calculate_rating(ratings):
+      """
+      Calculate weighted average rating.
+      
+      Jasown ratings have weight=5, user ratings have weight=1.
+      Returns tuple of (average, effective_count).
+      """
+      # implementation
+  ```
+  
+  ```typescript
+  /**
+   * Fetches scripts with filtering and pagination.
+   * 
+   * @param filters - Search filters (category, tags, rating)
+   * @param pagination - Page number and limit
+   * @returns Promise with scripts and total count
+   */
+  async function fetchScripts(filters, pagination) {
+    // implementation
+  }
+  ```
+
+## 🧪 Testing Requirements (ENFORCE)
+
+### New Endpoints
+- **MUST include tests** for all new API endpoints
+- **Test alongside** development (not TDD, but before PR)
+- **Coverage**: Happy path + error cases minimum
+  ```python
+  # backend/tests/test_scripts.py
+  def test_create_script_success():
+      # Test successful creation
+      
+  def test_create_script_unauthorized():
+      # Test without auth
+      
+  def test_create_script_invalid_tags():
+      # Test with >3 tags
+  ```
+
+### Frontend Testing
+- **Component tests** for new complex components
+- **Integration tests** for critical user flows
+- **Manual testing checklist** in PR description
+
+## 🚀 Development Workflow
+
+### Before Starting Work
+1. ✅ Read `/AI/MEMORY_BANK.md` for system state
+2. ✅ Check `/AI/COMPREHENSIVE_ARCHITECTURE.md` for context
+3. ✅ For new features: Create task from `/AI/task_template.md`
+4. ✅ Review related files and current implementation
+
+### During Development
+1. ✅ Follow file structure patterns:
+   - Frontend: `frontend/{components,hooks,lib,types,pages}`
+   - Backend: `backend/{routes,services,models,ai_*.py}`
+2. ✅ Use existing patterns (check similar implementations)
+3. ✅ Handle errors properly (HTTPException backend, Modal frontend)
+4. ✅ Add tests alongside code
+5. ✅ Document every function
+
+### After Completing Work
+1. ✅ **ALWAYS update** `/AI/status.md` with:
+   - What was completed
+   - How it was implemented
+   - Any issues encountered
+   - What needs to be done next
+2. ✅ Update relevant documentation in `/AI/`
+3. ✅ Run formatters (black, prettier)
+4. ✅ Run tests
+5. ✅ Check for linter errors
+
+## 🔄 File Patterns (FOLLOW EXACTLY)
+
+### Backend Endpoint Pattern
+```python
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import ScriptCreate, Script
+
+router = APIRouter(prefix="/api/scripts", tags=["scripts"])
+
+@router.post("/", response_model=Script)
+async def create_script(
+    script_data: ScriptCreate,
+    user_id: str = Query(..., description="Discord ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new script.
+    
+    Requires Discord authentication. Scripts start as unapproved.
+    Jasown scripts are auto-approved with weighted ratings.
+    """
+    # Validation
+    if len(script_data.tags) > 3:
+        raise HTTPException(400, detail="Maximum 3 tags allowed")
+    
+    # Business logic
+    # ...
+    
+    return script
+```
+
+### Frontend API Call Pattern
+```typescript
+import axios from 'axios';
+import { useSession } from 'next-auth/react';
+
+interface CreateScriptParams {
+  title: string;
+  code: string;
+  tags: string[];
+}
+
+/**
+ * Creates a new script via API.
+ * 
+ * @param scriptData - Script data to create
+ * @returns Created script with ID
+ * @throws Error if creation fails or user unauthorized
+ */
+async function createScript(scriptData: CreateScriptParams) {
+  const { data: session } = useSession();
+  
+  try {
+    const response = await axios.post('/api/scripts', scriptData, {
+      params: {
+        user_id: session.user.discordId
+      }
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 401) {
+      throw new Error('Authentication expired');
+    } else if (error.response?.status === 403) {
+      throw new Error('Not authorized');
+    }
+    throw new Error('Failed to create script');
+  }
+}
+```
+
+### React Component Pattern
+```typescript
+import { useState } from 'react';
+
+interface ScriptCardProps {
+  script: Script;
+  onRate: (rating: number) => void;
+}
+
+/**
+ * Displays a script card with rating functionality.
+ * 
+ * Shows title, author, tags, and interactive rating stars.
+ * Requires user to be authenticated to rate.
+ */
+export default function ScriptCard({ script, onRate }: ScriptCardProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Component implementation
+  
+  return (
+    // JSX
+  );
+}
+```
+
+## 🔐 Security Rules (ENFORCE)
+
+### Authentication
+- **Server-side verification ALWAYS** - Never trust client
+- **Admin checks on backend** - Use `is_super_admin(user_id)` helper
+- **Discord ID required** - All user operations need `user_id`
+- **Session validation** - Check session exists and is valid
+
+### Input Validation
+- **Pydantic models REQUIRED** - All request bodies
+- **Query parameter validation** - Use FastAPI Query with validation
+- **Sanitize user content** - Before displaying in UI
+- **SQL injection prevention** - SQLAlchemy ONLY, no raw SQL
+
+### Secrets Management
+- **NEVER commit** `.env` files
+- **Use environment variables** - All secrets in `.env`
+- **Check `.gitignore`** - Ensure secrets excluded
+
+## 🎯 Breaking Changes & Backward Compatibility
+
+### Before Making Breaking Changes
+1. ❓ **ASK**: "Does this break existing functionality?"
+2. ❓ **ASK**: "Do we need a migration script?"
+3. ❓ **ASK**: "Will this affect existing user data?"
+4. ✅ **If YES to any**: Request explicit approval before proceeding
+
+### Database Changes
+- **Create migration script** for all schema changes
+- **Name pattern**: `migrate_{description}.py`
+- **Test migration** on copy of production data
+- **Document in** `/AI/status.md`
+
+### API Changes
+- **Version new endpoints** - Use `/api/v2/...` if breaking
+- **Deprecate gradually** - Keep old endpoint with warning
+- **Document changes** - Update API docs
+
+## 📦 File Organization (STRICT)
+
+### Frontend Structure
+```
+frontend/
+├── components/          # Reusable UI components
+│   ├── {Feature}Card.tsx
+│   └── {Feature}Modal.tsx
+├── hooks/              # Custom React hooks
+│   └── use{Feature}.ts
+├── lib/                # Utilities and helpers
+│   ├── api.ts          # API client
+│   └── auth.tsx        # Auth context
+├── pages/              # Next.js routes
+│   ├── api/            # API routes (NextAuth, etc.)
+│   └── {route}.tsx
+└── types/              # TypeScript types/interfaces
+    └── {domain}.ts
+```
+
+### Backend Structure
+```
+backend/
+├── routes/             # API route handlers
+│   ├── scripts.py
+│   └── admin.py
+├── models.py           # Pydantic models
+├── database.py         # SQLAlchemy models
+├── ai_*.py            # AI modules (consolidated)
+├── services/          # Business logic services
+├── utils/             # Helper utilities
+└── migrate_*.py       # Database migrations
+```
+
+## 🚨 Error Handling Patterns (REQUIRED)
+
+### Backend Errors
+```python
+# Validation error
+if not data:
+    raise HTTPException(status_code=400, detail="Data required")
+
+# Not found
+if not resource:
+    raise HTTPException(status_code=404, detail="Resource not found")
+
+# Unauthorized
+if not is_admin:
+    raise HTTPException(status_code=403, detail="Admin access required")
+
+# Server error
+try:
+    # operation
+except Exception as e:
+    logger.error(f"Error: {e}")
+    raise HTTPException(status_code=500, detail="Internal server error")
+```
+
+### Frontend Errors
+```typescript
+// Use Modal components for errors
+const [error, setError] = useState<string | null>(null);
+
+try {
+  await apiCall();
+} catch (error) {
+  if (error.response?.status === 401) {
+    setError('Session expired. Please sign in again.');
+    signOut();
+  } else if (error.response?.status === 403) {
+    setError('You do not have permission for this action.');
+  } else {
+    setError('An error occurred. Please try again.');
+  }
+}
+
+// Display in Modal
+{error && <ErrorModal message={error} onClose={() => setError(null)} />}
+```
+
+## 📊 Data Patterns (CRITICAL)
+
+### Script Creation
+```python
+# User uploads (default unapproved)
+script = ScriptsCacheDB(
+    id=str(uuid.uuid4()),
+    title=script_data.title,
+    author=script_data.author,
+    code_preview=script_data.code[:500],  # First 500 chars
+    full_code=script_data.code,
+    is_approved=False,  # ALWAYS start unapproved
+    created_by=user_id,  # Discord ID
+)
+
+# Jasown special handling
+if script.author.lower() in ["jasown", "jasown scripts"]:
+    script.is_approved = True
+    script.rating_average = 5.0
+    script.rating_count = 5
+```
+
+### Rating Calculation
+```python
+def calculate_weighted_rating(ratings):
+    """
+    Calculate weighted average rating.
+    
+    User ratings: weight = 1
+    Jasown ratings: weight = 5
+    """
+    total_weighted = sum(r.rating * r.weight for r in ratings)
+    total_weight = sum(r.weight for r in ratings)
+    
+    if total_weight == 0:
+        return 0, 0
+    
+    return total_weighted / total_weight, total_weight
+```
+
+### AI Confidence Decision
+```python
+def determine_action(confidence):
+    """Determine action based on AI confidence score."""
+    if confidence >= 0.8:
+        return "proceed"
+    elif confidence >= 0.5:
+        return "ask_user"
+    elif confidence >= 0.3:
+        return "admin_review"
+    else:
+        return "urgent_admin_review"
+```
+
+## 🔍 Code Review Checklist (Self-Check)
+
+Before considering code complete:
+
+### Functionality
+- [ ] Meets requirements from task/issue
+- [ ] Error cases handled properly
+- [ ] Edge cases considered
+- [ ] Works with existing features
+
+### Code Quality
+- [ ] Every function documented
+- [ ] Follows naming conventions
+- [ ] Formatted with black/prettier
+- [ ] No linter errors
+- [ ] No console.log() or print() debug statements
+
+### Security
+- [ ] Input validated (Pydantic/validation)
+- [ ] Auth checked on backend
+- [ ] No SQL injection risks (SQLAlchemy only)
+- [ ] No secrets in code
+
+### Testing
+- [ ] Tests written and passing
+- [ ] Manual testing completed
+- [ ] Error paths tested
+
+### Documentation
+- [ ] `/AI/status.md` updated
+- [ ] Related docs updated
+- [ ] API changes documented
+- [ ] Comments explain "why" not just "what"
+
+## 🎯 Task Management
+
+### New Features
+1. **Create task** from `/AI/task_template.md`
+2. **Save in** `/AI/tasks/{feature-name}.md`
+3. **Update progress** in task file
+4. **Record completion** in `/AI/status.md`
+
+### Bug Fixes
+1. **Document issue** in `/AI/status.md`
+2. **Fix with tests** proving it's fixed
+3. **Update status** with solution
+
+### Refactoring
+1. **Ask about backward compatibility** FIRST
+2. **Document reason** in task file
+3. **Test existing functionality** still works
+4. **Update docs** if behavior changes
+
+## 🚀 Performance Guidelines
+
+### Database
+- **Use indexes** for frequently queried fields
+- **Pagination** for all list endpoints (max 100)
+- **Avoid N+1 queries** (use joins)
+- **Regular VACUUM** for SQLite maintenance
+
+### Frontend
+- **Debounce** search inputs (300ms)
+- **Lazy load** heavy components
+- **Cache** API responses where appropriate
+- **Optimize images** (Next.js Image component)
+
+### AI System
+- **Limit context** to MAX_CONTEXT_CHARS (16,000)
+- **Optimize chunk sizes** for retrieval
+- **Cache** FAISS index in memory
+- **Top-K = 8** (balance quality vs speed)
+
+## 🎨 UI/UX Patterns
+
+### User Feedback
+- **Loading states** for all async operations
+- **Success/error modals** for user actions
+- **Confirmation dialogs** for destructive actions
+- **Progress indicators** for multi-step flows
+
+### Forms
+- **Validation feedback** in real-time
+- **Clear error messages** (what went wrong + how to fix)
+- **Disable submit** during processing
+- **Auto-focus** first input field
+
+## 🔧 Environment & Config
+
+### Required Environment Variables
+- **Backend**: `.env` in `backend/`
+- **Frontend**: `.env.local` in `frontend/`
+- **NEVER commit** these files
+- **Document new vars** in `COMPREHENSIVE_ARCHITECTURE.md`
+
+### Configuration Changes
+- **Backward compatible** by default
+- **Feature flags** for experimental features
+- **Document in** `/AI/status.md`
+
+## 📝 Commit & PR Guidelines
+
+### Commits
+- **You handle commits** (user preference)
+- **Meaningful messages** describing what changed
+- **Format code** before committing
+
+### Pull Requests
+- **Use task template** for context
+- **Include test results**
+- **Update documentation**
+- **Self-review checklist** completed
+
+## ⚠️ Common Mistakes to AVOID
+
+### Backend
+- ❌ Raw SQL queries (use SQLAlchemy)
+- ❌ Missing user_id parameter
+- ❌ Trusting client-provided admin status
+- ❌ Returning errors as 200 OK
+- ❌ Not validating input with Pydantic
+- ❌ Type hints in Python code
+
+### Frontend
+- ❌ Using `type` instead of `interface`
+- ❌ Using `alert()` instead of Modal
+- ❌ API calls without user_id
+- ❌ Not handling auth expiration
+- ❌ Trusting user input without validation
+
+### General
+- ❌ Skipping documentation
+- ❌ Not updating `/AI/status.md`
+- ❌ Missing error handling
+- ❌ No tests for new endpoints
+- ❌ Breaking changes without migration
+
+## 🎯 Quick Reference
+
+### Check Before ANY Change
+1. `/AI/.cursorrules` (this file)
+2. `/AI/MEMORY_BANK.md` (system state)
+3. `/AI/COMPREHENSIVE_ARCHITECTURE.md` (full context)
+
+### After Completing Work
+1. Update `/AI/status.md`
+2. Update relevant documentation
+3. Run formatters
+4. Run tests
+5. Self-review checklist
+
+### For New Features
+1. Use `/AI/task_template.md`
+2. Get approval on approach
+3. Document decisions
+4. Update status throughout
+
+---
+
+## 📌 Remember
+
+**This codebase is getting complex. Following these rules keeps it organized, maintainable, and secure.**
+
+- ✅ Strict enforcement prevents technical debt
+- ✅ Documentation helps future you
+- ✅ Tests prevent regressions
+- ✅ Patterns ensure consistency
+- ✅ Memory bank tracks progress
+
+**When in doubt, ask rather than assume!**
+

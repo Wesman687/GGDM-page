@@ -49,7 +49,7 @@ export function BulkHueForm({
       if (!selectedHueSet) {
         newErrors.hueSet = 'Please select a hue set';
       }
-    } else {
+    } else if (mode === 'custom') {
       if (!customHues.trim()) {
         newErrors.customHues = 'Please enter hue data';
       } else {
@@ -59,6 +59,7 @@ export function BulkHueForm({
         }
       }
     }
+    // crafting mode doesn't need validation - it always has the preset hues
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

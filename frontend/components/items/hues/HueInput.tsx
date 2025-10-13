@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { AddHueRequest } from '../../../types/items';
-import { getHueColorName, getHueNameSuggestions, getHueValueSuggestions, validateHueValue, validateHueDescription } from '../../../utils/items/hueHelpers';
 
 interface HueInputProps {
   onAddHue: (hueData: AddHueRequest) => Promise<boolean>;
@@ -14,34 +13,25 @@ export function HueInput({ onAddHue, individualHues = [], disabled = false }: Hu
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   
-  // Autocomplete suggestions
-  const [hueValueSuggestions, setHueValueSuggestions] = useState<number[]>([]);
-  const [hueNameSuggestions, setHueNameSuggestions] = useState<string[]>([]);
-  const [showValueSuggestions, setShowValueSuggestions] = useState(false);
-  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  // Search/filter functionality
+  const [filteredHues, setFilteredHues] = useState<Array<{ hue: number; description: string; usage_count: number }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Update suggestions when input changes
+  // Filter hues based on search input
   useEffect(() => {
     if (hueValue.trim()) {
-      const suggestions = getHueValueSuggestions(hueValue, individualHues);
-      setHueValueSuggestions(suggestions);
-      setShowValueSuggestions(suggestions.length > 0);
+      const searchTerm = hueValue.toLowerCase();
+      const filtered = individualHues.filter(hue => 
+        hue.hue.toString().includes(searchTerm) || 
+        hue.description.toLowerCase().includes(searchTerm)
+      );
+      setFilteredHues(filtered);
+      setShowSuggestions(filtered.length > 0);
     } else {
-      setHueValueSuggestions([]);
-      setShowValueSuggestions(false);
+      setFilteredHues([]);
+      setShowSuggestions(false);
     }
-  }, [hueValue]); // Removed individualHues dependency to prevent infinite loops
-
-  useEffect(() => {
-    if (hueDescription.trim()) {
-      const suggestions = getHueNameSuggestions(hueDescription, individualHues);
-      setHueNameSuggestions(suggestions);
-      setShowNameSuggestions(suggestions.length > 0);
-    } else {
-      setHueNameSuggestions([]);
-      setShowNameSuggestions(false);
-    }
-  }, [hueDescription]); // Removed individualHues dependency to prevent infinite loops
+  }, [hueValue, individualHues]);
 
   const handleHueValueChange = (value: string) => {
     setHueValue(value);
@@ -53,26 +43,26 @@ export function HueInput({ onAddHue, individualHues = [], disabled = false }: Hu
     setErrors(prev => ({ ...prev, description: '' }));
   };
 
-  const selectHueValue = (value: number) => {
-    setHueValue(value.toString());
-    setShowValueSuggestions(false);
-  };
-
-  const selectHueName = (name: string) => {
-    setHueDescription(name);
-    setShowNameSuggestions(false);
+  const selectHue = (hue: { hue: number; description: string }) => {
+    setHueValue(hue.hue.toString());
+    setHueDescription(hue.description);
+    setShowSuggestions(false);
   };
 
   const validateForm = (): boolean => {
     const newErrors: {[key: string]: string} = {};
 
-    const hueNum = parseInt(hueValue, 10);
-    if (!validateHueValue(hueNum)) {
-      newErrors.hue = 'Hue must be between 0 and 3000';
+    if (!hueValue.trim()) {
+      newErrors.hue = 'Hue value is required';
+    } else {
+      const hueNum = parseInt(hueValue, 10);
+      if (isNaN(hueNum) || hueNum < 0 || hueNum > 3000) {
+        newErrors.hue = 'Hue must be between 0 and 3000';
+      }
     }
 
-    if (!validateHueDescription(hueDescription)) {
-      newErrors.description = 'Description is required and must be less than 100 characters';
+    if (!hueDescription.trim()) {
+      newErrors.description = 'Description is required';
     }
 
     setErrors(newErrors);
@@ -98,6 +88,7 @@ export function HueInput({ onAddHue, individualHues = [], disabled = false }: Hu
         setHueValue('');
         setHueDescription('');
         setErrors({});
+        setShowSuggestions(false);
       }
     } catch (error) {
       console.error('Error adding hue:', error);
@@ -106,122 +97,89 @@ export function HueInput({ onAddHue, individualHues = [], disabled = false }: Hu
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      setShowValueSuggestions(false);
-      setShowNameSuggestions(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Hue Value */}
-          <div className="relative">
-            <label htmlFor="hue-value" className="block text-sm font-medium text-gray-700 mb-1">
-              Hue Value
-            </label>
-            <input
-              type="number"
-              id="hue-value"
-              value={hueValue}
-              onChange={(e) => handleHueValueChange(e.target.value)}
-              onFocus={() => setShowValueSuggestions(hueValueSuggestions.length > 0)}
-              onBlur={() => setTimeout(() => setShowValueSuggestions(false), 200)}
-              onKeyDown={handleKeyDown}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.hue ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="Enter hue value (0-3000)"
-              disabled={disabled || submitting}
-              min="0"
-              max="3000"
-            />
-            
-            {/* Value Suggestions */}
-            {showValueSuggestions && hueValueSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                {hueValueSuggestions.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => selectHueValue(value)}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className="w-4 h-4 rounded border border-gray-300"
-                        style={{ backgroundColor: `hsl(${value}, 70%, 50%)` }}
-                      />
-                      <span className="font-medium">{value}</span>
-                      <span className="text-sm text-gray-500">({getHueColorName(value)})</span>
+        {/* Hue Search */}
+        <div className="relative">
+          <label htmlFor="hue-search" className="block text-sm font-medium text-gray-700 mb-1">
+            Search Hue
+          </label>
+          <input
+            type="text"
+            id="hue-search"
+            value={hueValue}
+            onChange={(e) => handleHueValueChange(e.target.value)}
+            onFocus={() => setShowSuggestions(filteredHues.length > 0)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.hue ? 'border-red-300' : 'border-gray-300'
+            }`}
+            placeholder="Type hue number or description..."
+            disabled={disabled || submitting}
+          />
+          
+          {/* Search Results */}
+          {showSuggestions && filteredHues.length > 0 && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+              {filteredHues.slice(0, 10).map((hue) => (
+                <button
+                  key={hue.hue}
+                  type="button"
+                  onClick={() => selectHue(hue)}
+                  className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none border-b border-gray-100 last:border-b-0"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium">{hue.hue}</span>
+                      <span className="text-gray-500 ml-2">- {hue.description}</span>
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            {errors.hue && (
-              <p className="mt-1 text-sm text-red-600">{errors.hue}</p>
-            )}
-          </div>
+                    {hue.usage_count > 0 && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                        {hue.usage_count} uses
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {errors.hue && (
+            <p className="mt-1 text-sm text-red-600">{errors.hue}</p>
+          )}
+        </div>
 
-          {/* Hue Description */}
-          <div className="relative">
-            <label htmlFor="hue-description" className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <input
-              type="text"
-              id="hue-description"
-              value={hueDescription}
-              onChange={(e) => handleHueNameChange(e.target.value)}
-              onFocus={() => setShowNameSuggestions(hueNameSuggestions.length > 0)}
-              onBlur={() => setTimeout(() => setShowNameSuggestions(false), 200)}
-              onKeyDown={handleKeyDown}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.description ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="Enter hue description"
-              disabled={disabled || submitting}
-              maxLength={100}
-            />
-            
-            {/* Name Suggestions */}
-            {showNameSuggestions && hueNameSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                {hueNameSuggestions.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => selectHueName(name)}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            {errors.description && (
-              <p className="mt-1 text-sm text-red-600">{errors.description}</p>
-            )}
-          </div>
+        {/* Description */}
+        <div>
+          <label htmlFor="hue-description" className="block text-sm font-medium text-gray-700 mb-1">
+            Description
+          </label>
+          <input
+            type="text"
+            id="hue-description"
+            value={hueDescription}
+            onChange={(e) => handleHueDescriptionChange(e.target.value)}
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.description ? 'border-red-300' : 'border-gray-300'
+            }`}
+            placeholder="Enter description"
+            disabled={disabled || submitting}
+          />
+          {errors.description && (
+            <p className="mt-1 text-sm text-red-600">{errors.description}</p>
+          )}
         </div>
 
         {/* Preview */}
         {hueValue && hueDescription && !errors.hue && !errors.description && (
           <div className="p-3 bg-gray-50 rounded-lg border">
             <div className="flex items-center space-x-3">
-              <div
-                className="w-6 h-6 rounded border border-gray-300"
-                style={{ backgroundColor: `hsl(${parseInt(hueValue, 10)}, 70%, 50%)` }}
-              />
+              <div className="w-6 h-6 rounded border border-gray-300 bg-gray-200" />
               <div>
                 <span className="font-medium">Hue {hueValue}</span>
                 <span className="text-sm text-gray-500 ml-2">
-                  ({getHueColorName(parseInt(hueValue, 10))})
                 </span>
                 <div className="text-sm text-gray-600">{hueDescription}</div>
               </div>

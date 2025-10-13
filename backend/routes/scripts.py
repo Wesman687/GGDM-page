@@ -65,7 +65,10 @@ def db_script_to_pydantic(db_script: ScriptsCacheDB) -> Script:
         created_by=db_script.created_by,
         approved_by=db_script.approved_by,
         approved_at=db_script.approved_at,
-        rejection_reason=getattr(db_script, 'rejection_reason', None)
+        rejection_reason=getattr(db_script, 'rejection_reason', None),
+        parent_script_id=getattr(db_script, 'parent_script_id', None),
+        is_companion=getattr(db_script, 'is_companion', False),
+        execution_order=getattr(db_script, 'execution_order', None)
     )
 
 def db_rating_to_pydantic(db_rating: ScriptRatingsDB) -> ScriptRating:
@@ -119,15 +122,23 @@ async def list_scripts(
     rating_min: Optional[int] = Query(None),
     search_query: Optional[str] = Query(None),
     is_approved: Optional[bool] = Query(True),
+    include_companions: bool = Query(False, description="Include companion scripts in results"),
     limit: int = Query(200, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
-    """List scripts with filtering and pagination"""
+    """List scripts with filtering and pagination (excludes companion scripts by default)"""
     print(f"DEBUG: API called with tags={tags}, is_approved={is_approved}")
     
     # Start with base query
     base_query = db.query(ScriptsCacheDB)
+    
+    # Exclude companion scripts by default (only show main scripts)
+    if not include_companions:
+        base_query = base_query.filter(or_(
+            ScriptsCacheDB.is_companion == False,
+            ScriptsCacheDB.is_companion == None
+        ))
     
     # Apply basic filters first
     if category:
@@ -279,6 +290,20 @@ async def get_script(script_id: str, db: Session = Depends(get_db)):
     
     return db_script_to_pydantic(script)
 
+@router.get("/{script_id}/companions", response_model=List[Script])
+async def get_companion_scripts(script_id: str, db: Session = Depends(get_db)):
+    """
+    Get companion scripts for a main script.
+    
+    Returns scripts that are linked as companions to the specified parent script,
+    ordered by execution_order.
+    """
+    companions = db.query(ScriptsCacheDB).filter(
+        ScriptsCacheDB.parent_script_id == script_id
+    ).order_by(ScriptsCacheDB.execution_order.asc()).all()
+    
+    return [db_script_to_pydantic(companion) for companion in companions]
+
 @router.post("/", response_model=Script)
 async def create_script(
     script_data: ScriptCreate,
@@ -307,7 +332,10 @@ async def create_script(
         created_by=user_id,
         is_approved=is_admin,  # Auto-approve if admin, otherwise requires approval
         approved_by=user_id if is_admin else None,
-        approved_at=datetime.utcnow() if is_admin else None
+        approved_at=datetime.utcnow() if is_admin else None,
+        parent_script_id=script_data.parent_script_id,
+        is_companion=script_data.is_companion,
+        execution_order=script_data.execution_order
     )
     
     db.add(db_script)

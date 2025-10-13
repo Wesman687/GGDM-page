@@ -26,8 +26,21 @@ export function ScriptPreview({
   }
 
   const getScriptPreview = (context: string, lineNumber: number, lines: number): string => {
-    if (!context) return '';
+    if (!context) return 'No context available';
+    
     const allLines = context.split('\n');
+    
+    // If the context has fewer lines than requested, show all available lines
+    if (allLines.length <= lines) {
+      return context;
+    }
+    
+    // If lineNumber is beyond the context, start from the beginning
+    if (lineNumber >= allLines.length) {
+      return allLines.slice(0, lines).join('\n');
+    }
+    
+    // Normal case: show lines around the specified line number
     const startLine = Math.max(0, lineNumber - Math.floor(lines / 2));
     const endLine = Math.min(allLines.length, startLine + lines);
     
@@ -35,13 +48,26 @@ export function ScriptPreview({
   };
 
   const preview = getScriptPreview(script.context || script.usage_context || '', script.line_number || 0, contextLines);
+  
+  // Get total available lines for reference
+  const allLines = (script.context || script.usage_context || '').split('\n');
 
   // Determine next expansion level
   const getNextExpansionText = () => {
-    if (contextLines === 3) return 'Show More (6 lines)';
-    if (contextLines === 6) return 'Show More (10 lines)';
-    if (contextLines === 10) return 'Show Less';
-    return 'Show Less';
+    const expansionLevels = [3, 6, 10, 15, 20, 25, 30];
+    const currentIndex = expansionLevels.indexOf(contextLines);
+    
+    // Check if we have more context available
+    const hasMoreContent = allLines.length > contextLines;
+    
+    if (currentIndex === -1 || currentIndex === expansionLevels.length - 1 || !hasMoreContent) {
+      // At max expansion, no more content, or unknown level, show "Show Less"
+      return 'Show Less';
+    } else {
+      // Show next level
+      const nextLevel = expansionLevels[currentIndex + 1];
+      return `Show More (${nextLevel} lines)`;
+    }
   };
 
   return (
@@ -71,13 +97,13 @@ export function ScriptPreview({
       </div>
 
       {/* Code Preview */}
-      <div className="bg-gray-900 text-gray-100 rounded p-3 text-sm font-mono overflow-x-auto">
-        <pre className="whitespace-pre-wrap">{preview}</pre>
+      <div className="bg-gray-900 text-gray-100 rounded p-3 text-sm font-mono overflow-x-auto min-h-[60px]">
+        <pre className="whitespace-pre-wrap">{preview || 'No code preview available'}</pre>
       </div>
 
       {/* Footer */}
       <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-        <span>Context: {contextLines} lines</span>
+        <span>Context: {contextLines} lines (max: {allLines.length})</span>
         <span>Script ID: {script.script_id || 'N/A'}</span>
       </div>
     </div>
@@ -97,14 +123,28 @@ export function ScriptPreviewCompact({
   onToggleExpansion: () => void;
 }) {
   const getScriptPreview = (context: string, lineNumber: number, lines: number): string => {
+    if (!context) return 'No context available';
+    
     const allLines = context.split('\n');
+    
+    // If the context has fewer lines than requested, show all available lines
+    if (allLines.length <= lines) {
+      return context;
+    }
+    
+    // If lineNumber is beyond the context, start from the beginning
+    if (lineNumber >= allLines.length) {
+      return allLines.slice(0, lines).join('\n');
+    }
+    
+    // Normal case: show lines around the specified line number
     const startLine = Math.max(0, lineNumber - Math.floor(lines / 2));
     const endLine = Math.min(allLines.length, startLine + lines);
     
     return allLines.slice(startLine, endLine).join('\n');
   };
 
-  const preview = getScriptPreview(script.context || script.usage_context, script.line_number, contextLines);
+  const preview = getScriptPreview(script.context || script.usage_context || '', script.line_number || 0, contextLines);
 
   return (
     <div className="border border-gray-200 rounded p-3 bg-white">
@@ -121,8 +161,8 @@ export function ScriptPreviewCompact({
         </button>
       </div>
 
-      <div className="bg-gray-100 rounded p-2 text-xs font-mono text-gray-800 overflow-x-auto">
-        <pre className="whitespace-pre-wrap">{preview}</pre>
+      <div className="bg-gray-100 rounded p-2 text-xs font-mono text-gray-800 overflow-x-auto min-h-[40px]">
+        <pre className="whitespace-pre-wrap">{preview || 'No code preview available'}</pre>
       </div>
     </div>
   );
@@ -168,16 +208,17 @@ export function ScriptList({
   return (
     <div className="space-y-4">
       {scripts.filter(script => script).map((script) => {
-        const contextLines = expandedScripts[script.script_id] || 3;
+        const uniqueId = script.id || script.script_id;
+        const contextLines = expandedScripts[uniqueId] || 3;
         const expanded = contextLines > 3;
         
         return (
           <ScriptPreview
-            key={script.script_id}
+            key={script.id || script.script_id}
             script={script}
             expanded={expanded}
             contextLines={contextLines}
-            onToggleExpansion={() => onToggleExpansion(script.script_id)}
+            onToggleExpansion={() => onToggleExpansion(uniqueId)}
             onViewScript={onViewScript ? () => onViewScript(script) : undefined}
           />
         );

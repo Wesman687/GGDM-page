@@ -1,0 +1,166 @@
+{
+  "last_updated": "2025-10-13",
+  "version": "1.0.0",
+  "environment": {
+    "backend": {
+      "framework": "FastAPI",
+      "port": 7000,
+      "python_version": "3.10+",
+      "database": "SQLite",
+      "ai_integrated": true,
+      "note": "AI service consolidated into main backend - NO separate service on port 7001"
+    },
+    "frontend": {
+      "framework": "Next.js 13+",
+      "port": 3000,
+      "language": "TypeScript",
+      "styling": "Tailwind CSS",
+      "auth": "NextAuth.js with Discord"
+    },
+    "ai_system": {
+      "architecture": "RAG (FAISS + SQLite)",
+      "llm": "gpt-4o-mini",
+      "embeddings": "text-embedding-3-small",
+      "dimensions": 1536,
+      "max_context_chars": 16000,
+      "top_k": 8,
+      "context_split": "60% GG Scripts, 40% other"
+    }
+  },
+  "features": {
+    "scripts_management": {
+      "status": "active",
+      "key_components": [
+        "User uploads",
+        "Admin approval workflow",
+        "Rating system (weighted)",
+        "Tag management (max 3)",
+        "Search (manual + AI)",
+        "Featured scripts"
+      ]
+    },
+    "ai_assistant": {
+      "status": "active",
+      "key_components": [
+        "RAG with FAISS",
+        "Intent recognition",
+        "Uncertainty management",
+        "Self-learning",
+        "Rule suggestions",
+        "Admin review queue"
+      ]
+    },
+    "authentication": {
+      "status": "active",
+      "provider": "Discord OAuth2",
+      "requirements": [
+        "GG Discord server membership",
+        "Admin verification server-side"
+      ],
+      "caching": "5 minute GG membership cache"
+    },
+    "dockmaster_suggestions": {
+      "status": "active",
+      "github_integration": true,
+      "auto_pr_creation": true
+    },
+    "items_management": {
+      "status": "in_progress",
+      "note": "Item system partially implemented"
+    },
+    "hue_management": {
+      "status": "pending",
+      "note": "Planned feature, not yet implemented"
+    }
+  },
+  "critical_patterns": {
+    "authentication": {
+      "all_api_calls_require": "user_id (Discord ID)",
+      "admin_endpoints_require": "is_admin=true parameter",
+      "server_side_verification": "Always verify admin status on backend",
+      "never_trust_client": true
+    },
+    "scripts": {
+      "default_approval": false,
+      "jasown_auto_approval": true,
+      "jasown_weighted_rating": 5,
+      "max_tags": 3,
+      "code_preview_length": 500
+    },
+    "ai_confidence": {
+      "high": "≥0.8 - proceed",
+      "medium": "0.5-0.8 - ask user",
+      "low": "0.3-0.5 - admin review",
+      "very_low": "<0.3 - urgent admin review"
+    }
+  },
+  "database": {
+    "suggestions_db": {
+      "location": "backend/suggestions.db",
+      "tables": [
+        "suggestions",
+        "dockmasters",
+        "admins",
+        "scripts_cache",
+        "script_ratings",
+        "script_tags_config"
+      ]
+    },
+    "ai_service_db": {
+      "location": "backend/ai_service.db",
+      "tables": [
+        "rag_chunks",
+        "interactions",
+        "ai_interaction_reviews",
+        "intent_patterns",
+        "uncertainty_requests",
+        "wiki_knowledge"
+      ],
+      "vector_index": "FAISS (separate file)"
+    }
+  },
+  "integrations": {
+    "discord": {
+      "oauth": "User authentication",
+      "guild_api": "GG membership verification",
+      "rate_limiting": "Exponential backoff (max 5 retries)"
+    },
+    "github": {
+      "pr_creation": "Dockmaster suggestions",
+      "repo": "LeoPiro/GG_Dms",
+      "auth": "Personal access token"
+    },
+    "openai": {
+      "chat": "gpt-4o-mini",
+      "embeddings": "text-embedding-3-small",
+      "retry_logic": "Exponential backoff"
+    },
+    "wiki": {
+      "source": "UO Outlands wiki",
+      "scraping": "Automated knowledge extraction",
+      "purpose": "Intent pattern enhancement"
+    }
+  },
+  "deployment": {
+    "development": {
+      "backend_command": "cd backend && python main.py",
+      "frontend_command": "cd frontend && npm run dev",
+      "services_count": 2
+    },
+    "production": {
+      "process_manager": "PM2 or systemd",
+      "reverse_proxy": "nginx",
+      "services": [
+        "dm-backend (port 7000)",
+        "dm-frontend (port 3000)"
+      ]
+    }
+  },
+  "git": {
+    "current_branch": "dev",
+    "production_branch": "main",
+    "workflow": "dev → main for production",
+    "repository": "https://github.com/Wesman687/GGDM-page"
+  }
+}
+

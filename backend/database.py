@@ -93,6 +93,9 @@ class ScriptsCacheDB(Base):
     approved_by = Column(String)  # Admin Discord ID
     approved_at = Column(DateTime)
     rejection_reason = Column(Text)  # Reason for rejection if rejected
+    parent_script_id = Column(String, ForeignKey('scripts_cache.id'))  # Links to main script
+    is_companion = Column(Boolean, default=False)  # True if this is a companion script
+    execution_order = Column(Integer)  # Order for multiple companions (1, 2, 3, etc.)
 
 class ScriptRatingsDB(Base):
     __tablename__ = "script_ratings"

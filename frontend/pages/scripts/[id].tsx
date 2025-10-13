@@ -3,6 +3,7 @@ import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
 import GGMemberGuard from '@/components/GGMemberGuard'
 import ScriptViewer from '@/components/ScriptViewer'
+import CompanionScriptsSection from '@/components/CompanionScriptsSection'
 import { Script, ScriptRatingCreate, ScriptRating, apiService } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import toast from 'react-hot-toast'
@@ -406,6 +407,15 @@ export default function ScriptDetailPage() {
               
             </div>
           </div>
+
+          {/* Companion Scripts */}
+          {!script.is_companion && (
+            <CompanionScriptsSection 
+              mainScriptId={script.id}
+              mainScriptTitle={script.title}
+              canAddCompanion={isAdmin || script.created_by === user?.discordId}
+            />
+          )}
 
           {/* Code Display */}
           {script.code_preview && (

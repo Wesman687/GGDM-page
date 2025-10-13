@@ -65,6 +65,9 @@ export interface ScriptCreate {
   description?: string
   code: string
   exe_download_url?: string
+  parent_script_id?: string
+  is_companion?: boolean
+  execution_order?: number
 }
 
 export interface ScriptUpdate {
@@ -75,6 +78,9 @@ export interface ScriptUpdate {
   description?: string
   code?: string
   exe_download_url?: string
+  parent_script_id?: string
+  is_companion?: boolean
+  execution_order?: number
 }
 
 export interface Script {
@@ -102,6 +108,9 @@ export interface Script {
   approved_at?: string
   rejection_reason?: string
   message?: string
+  parent_script_id?: string
+  is_companion?: boolean
+  execution_order?: number
 }
 
 export interface ScriptRatingCreate {
@@ -329,6 +338,11 @@ export const apiService = {
     await api.delete(`/api/scripts/${id}`, {
       params: { user_id: userId, is_admin: isAdmin }
     })
+  },
+
+  async getCompanionScripts(scriptId: string): Promise<Script[]> {
+    const response = await api.get(`/api/scripts/${scriptId}/companions`)
+    return response.data
   },
 
   async rateScript(id: string, rating: ScriptRatingCreate, userId: string): Promise<ScriptRating> {

@@ -1,0 +1,214 @@
+{
+  "system": "Items Management System",
+  "description": "Comprehensive item management system for UO Outlands with intelligent merging, hue management, and script integration",
+  "status": "Complete and fully functional",
+  "last_updated": "2025-10-13",
+  
+  "core_features": {
+    "item_crud": {
+      "description": "Complete CRUD operations for items",
+      "endpoints": [
+        "GET /api/items/items - List items with filtering",
+        "POST /api/items/items - Create new item",
+        "PUT /api/items/items/{id} - Update item",
+        "DELETE /api/items/items/{id} - Delete item"
+      ],
+      "key_patterns": [
+        "All items require name and can have item_id",
+        "Numeric names automatically moved to item_id field",
+        "Case-insensitive search by name or ID"
+      ]
+    },
+    
+    "merge_system": {
+      "description": "Intelligent merging of duplicate/incomplete items",
+      "endpoints": [
+        "POST /api/items/items/merge - Merge two items",
+        "POST /api/items/bulk-merge-duplicates - Bulk merge duplicates"
+      ],
+      "key_patterns": [
+        "Target-priority data consolidation",
+        "Handles UNIQUE constraints on item_script_usage",
+        "Deletes conflicting records before transfer",
+        "Proper database connection management with rollback"
+      ],
+      "merge_scenarios": [
+        "Item with name but no ID + Item with ID but no name",
+        "Duplicate items with same item_id",
+        "Items with numeric names that should be IDs"
+      ]
+    },
+    
+    "hue_management": {
+      "description": "Complete hue system with individual and bulk operations",
+      "endpoints": [
+        "GET /api/items/{id}/hues - Get item hues",
+        "POST /api/items/{id}/hues - Add hue to item",
+        "PUT /api/items/{id}/hues/{hue} - Update hue description",
+        "DELETE /api/items/{id}/hues/{hue} - Remove hue from item",
+        "GET /api/items/hue-sets - Get all hue sets",
+        "POST /api/items/hue-sets - Create new hue set",
+        "GET /api/items/individual-hues - Get all individual hues"
+      ],
+      "key_patterns": [
+        "Hue sets contain multiple hues for bulk operations",
+        "Individual hues can be edited via modal",
+        "Search-based hue input (no fake dropdown values)",
+        "Hue 0 (Default) properly handled"
+      ]
+    },
+    
+    "script_integration": {
+      "description": "Links items to scripts that use them",
+      "endpoints": [
+        "GET /api/items/{id}/script-examples - Get script usage examples",
+        "POST /api/items/validate-script-items - Validate items in script",
+        "POST /api/items/link-script-to-items - Link script to items"
+      ],
+      "key_patterns": [
+        "Pagination for script examples (10 per page)",
+        "Shows usage context and line numbers",
+        "Unique IDs for React key props",
+        "Expandable code previews"
+      ]
+    }
+  },
+  
+  "database_schema": {
+    "items": {
+      "fields": ["id", "name", "item_id", "hue", "category_id", "description", "usage_count", "is_verified", "created_at", "updated_at"],
+      "key_constraints": ["PRIMARY KEY (id)"]
+    },
+    "item_hues": {
+      "fields": ["id", "item_id", "hue", "description", "usage_count", "created_at"],
+      "key_constraints": ["PRIMARY KEY (id)", "FOREIGN KEY (item_id) REFERENCES items(id)"]
+    },
+    "item_categories": {
+      "fields": ["id", "name", "description", "created_at"],
+      "key_constraints": ["PRIMARY KEY (id)"]
+    },
+    "hue_sets": {
+      "fields": ["id", "name", "description", "hues", "usage_count", "created_at", "updated_at", "is_active"],
+      "key_constraints": ["PRIMARY KEY (id)"]
+    },
+    "item_script_usage": {
+      "fields": ["id", "item_id", "script_id", "line_number", "usage_context", "created_at"],
+      "key_constraints": ["PRIMARY KEY (id)", "UNIQUE (item_id, script_id, line_number)", "FOREIGN KEY (item_id) REFERENCES items(id)"]
+    }
+  },
+  
+  "frontend_components": {
+    "pages": {
+      "items.tsx": "Main items page with filtering, search, and management actions"
+    },
+    "modals": {
+      "ItemsMergeModal.tsx": "Intelligent merge interface with search and create options",
+      "ViewItemModal.tsx": "Comprehensive item viewer with hue and script management",
+      "CreateItemModal.tsx": "Item creation interface"
+    },
+    "hues": {
+      "HueSetManager.tsx": "Bulk hue set management with visual selection",
+      "EditHueModal.tsx": "Individual hue editing modal",
+      "HueInput.tsx": "Search-based hue input (replaces dropdown)",
+      "BulkHueForm.tsx": "Bulk hue addition from sets or custom input",
+      "HueList.tsx": "Hue display with editing capabilities"
+    },
+    "scripts": {
+      "ScriptPreview.tsx": "Script examples display with expandable code"
+    }
+  },
+  
+  "hooks": {
+    "useItems.ts": "Main items data management hook",
+    "useHues.ts": "Hue sets and individual hues management",
+    "useItemHues.ts": "Item-specific hue operations",
+    "useScriptExamples.ts": "Script usage examples for items"
+  },
+  
+  "utils": {
+    "itemHelpers.ts": {
+      "functions": [
+        "computeItemProperties - Computes display properties for items",
+        "computeDisplayName - Handles name display logic",
+        "computeDisplayId - Handles ID display logic", 
+        "isItemVerified - Checks if item has real name vs numeric",
+        "isNumericId - Detects numeric/hex strings"
+      ]
+    }
+  },
+  
+  "key_algorithms": {
+    "merge_logic": {
+      "description": "Target-priority data consolidation",
+      "steps": [
+        "1. Validate both items exist",
+        "2. Delete conflicting item_script_usage records from source",
+        "3. Update target with best data from both items",
+        "4. Transfer remaining script usage records",
+        "5. Transfer hue records",
+        "6. Delete source item",
+        "7. Commit transaction or rollback on error"
+      ]
+    },
+    "numeric_name_processing": {
+      "description": "Detects and moves numeric names to item_id field",
+      "patterns": [
+        "Pure numeric strings (e.g., '1234')",
+        "Hexadecimal strings (e.g., '0x1718')",
+        "Mixed alphanumeric treated as names"
+      ]
+    }
+  },
+  
+  "error_handling": {
+    "database_locks": {
+      "solution": "Proper connection management with try/except/finally blocks",
+      "pattern": "conn.rollback() in except, conn.close() in finally"
+    },
+    "unique_constraints": {
+      "solution": "Delete conflicting records before transfer operations",
+      "applies_to": "item_script_usage table during merges"
+    },
+    "react_keys": {
+      "solution": "Generate unique IDs combining script_id and line_number",
+      "pattern": "id: f\"{script_id}_{line_number}\""
+    }
+  },
+  
+  "testing_approach": {
+    "manual_testing": [
+      "All merge scenarios (name+ID, duplicate items, numeric names)",
+      "Hue management (individual and bulk operations)",
+      "Search functionality (case-insensitive, hex IDs)",
+      "Script examples display and pagination",
+      "Error handling and edge cases"
+    ],
+    "test_files": [
+      "backend/test_script_item_integration.py - Script integration tests"
+    ]
+  },
+  
+  "common_operations": {
+    "merge_items": "Use ItemsMergeModal with search functionality",
+    "add_hues": "Use BulkHueForm for sets or HueInput for individual",
+    "edit_hue": "Click Edit button to open EditHueModal",
+    "create_hue_set": "Use HueSetManager with visual hue selection",
+    "search_items": "Use main search bar (case-insensitive)",
+    "view_script_usage": "Click on item to see script examples"
+  },
+  
+  "known_gotchas": [
+    "Database locks occur with improper connection management",
+    "UNIQUE constraints on item_script_usage require conflict handling",
+    "Numeric names must be moved to item_id field, not kept as names",
+    "React keys must be unique to prevent rendering errors",
+    "Hue 0 (Default) needs special handling in database queries"
+  ],
+  
+  "performance_notes": [
+    "Pagination used for script examples (10 per page)",
+    "Search is case-insensitive for better UX",
+    "Bulk operations handle multiple hues efficiently",
+    "Database transactions ensure data consistency"
+  ]
+}

@@ -1,0 +1,283 @@
+{
+  "architecture_decisions": [
+    {
+      "id": "decision_001",
+      "date": "2025-10-01",
+      "title": "Consolidated AI Service into Main Backend",
+      "decision": "Integrate AI service into main backend (port 7000) instead of separate service (port 7001)",
+      "context": "Initially had separate AI service for modularity, but operational complexity outweighed benefits",
+      "rationale": [
+        "Simplified deployment: 2 services instead of 3",
+        "Reduced latency: No proxy overhead between services",
+        "Easier debugging: Single process to monitor",
+        "Lower resource usage: One Python process instead of two",
+        "Shared database connections: More efficient resource utilization"
+      ],
+      "alternatives_considered": [
+        {
+          "option": "Keep separate AI service on port 7001",
+          "pros": ["Better separation of concerns", "Independent scaling"],
+          "cons": ["Deployment complexity", "Proxy latency", "More monitoring"],
+          "rejected_reason": "Operational complexity not justified for current scale"
+        },
+        {
+          "option": "Microservices architecture",
+          "pros": ["Maximum modularity", "Independent deployment"],
+          "cons": ["Significant complexity", "Overkill for current needs"],
+          "rejected_reason": "Team size and scale don't warrant microservices"
+        }
+      ],
+      "impact": {
+        "files_affected": [
+          "backend/main.py - Added AI initialization",
+          "backend/ai_*.py - New AI modules",
+          "backend/routes/scripts.py - Direct AI calls",
+          "frontend - No changes needed"
+        ],
+        "deployment": "Simplified: Only need to manage 2 services",
+        "performance": "Reduced AI query latency by ~50-100ms"
+      },
+      "status": "implemented",
+      "documentation": "AI/CONSOLIDATION_SUMMARY.md"
+    },
+    {
+      "id": "decision_002",
+      "date": "2025-10-05",
+      "title": "SQLite + FAISS over PostgreSQL + pgvector",
+      "decision": "Use SQLite with FAISS for vector search instead of PostgreSQL with pgvector",
+      "context": "Need vector similarity search for AI RAG system",
+      "rationale": [
+        "Simpler deployment: No PostgreSQL server setup required",
+        "Sufficient performance: FAISS excellent for current data volume (~6,500 chunks)",
+        "Single file backups: Easy backup and restore",
+        "Lower operational overhead: No database server to maintain",
+        "Faster development: No complex database setup"
+      ],
+      "alternatives_considered": [
+        {
+          "option": "PostgreSQL + pgvector",
+          "pros": ["Better for very large scale", "ACID guarantees", "Advanced features"],
+          "cons": ["Complex setup", "Server maintenance", "Overkill for current needs"],
+          "rejected_reason": "Current scale doesn't require PostgreSQL capabilities"
+        },
+        {
+          "option": "Pinecone or managed vector DB",
+          "pros": ["Fully managed", "Scalable"],
+          "cons": ["External dependency", "Cost", "Data locality"],
+          "rejected_reason": "Prefer self-hosted solution for control and cost"
+        }
+      ],
+      "impact": {
+        "performance": "FAISS provides sub-second similarity search",
+        "scalability": "Adequate for 10,000+ chunks, may need migration beyond 100,000",
+        "operations": "Simple backup/restore, no server maintenance"
+      },
+      "status": "implemented",
+      "review_trigger": "When chunk count > 50,000 or queries > 100/second",
+      "migration_path": "PostgreSQL + pgvector if needed at scale"
+    },
+    {
+      "id": "decision_003",
+      "date": "2025-10-08",
+      "title": "Jasown Script Auto-Approval with Weighted Ratings",
+      "decision": "Automatically approve Jasown scripts with 5x weighted ratings",
+      "context": "Jasown is the authoritative script creator for UO Outlands community",
+      "rationale": [
+        "Community trust: Jasown scripts are gold standard",
+        "Reduced admin workload: No need to review Jasown submissions",
+        "Quality indication: 5x weight reflects higher quality/trust",
+        "User expectation: Community expects Jasown scripts to be featured"
+      ],
+      "implementation": {
+        "detection": "Case-insensitive check for 'jasown' or 'jasown scripts' in author field",
+        "auto_approval": "is_approved = True on creation",
+        "weighted_rating": "weight = 5 (counts as 5 user ratings)",
+        "initial_rating": "rating_average = 5.0, rating_count = 5"
+      },
+      "alternatives_considered": [
+        {
+          "option": "Treat Jasown scripts like any other",
+          "rejected_reason": "Doesn't reflect community standards and trust"
+        },
+        {
+          "option": "Separate 'official' category",
+          "rejected_reason": "Weighting system more flexible and fair"
+        }
+      ],
+      "status": "implemented",
+      "location": "backend/routes/scripts.py:create_script()"
+    },
+    {
+      "id": "decision_004",
+      "date": "2025-10-09",
+      "title": "Maximum 3 Tags Per Script",
+      "decision": "Enforce maximum of 3 tags per script",
+      "context": "Tag system for script categorization and search",
+      "rationale": [
+        "Forces meaningful categorization: Users must choose most relevant tags",
+        "Better search UX: Avoids tag spam and over-categorization",
+        "UI constraints: Limited space for tag display in cards",
+        "Search relevance: Fewer tags = more precise matching"
+      ],
+      "implementation": {
+        "validation": "Pydantic model + API endpoint validation",
+        "error_message": "Maximum 3 tags allowed",
+        "ui_enforcement": "Tag selector limits to 3 selections"
+      },
+      "alternatives_considered": [
+        {
+          "option": "Unlimited tags",
+          "rejected_reason": "Leads to tag spam and poor categorization"
+        },
+        {
+          "option": "5 tags maximum",
+          "rejected_reason": "Still too many, doesn't force prioritization"
+        }
+      ],
+      "status": "implemented",
+      "may_revisit": "If users consistently request more tags"
+    },
+    {
+      "id": "decision_005",
+      "date": "2025-10-10",
+      "title": "AI Confidence Threshold System",
+      "decision": "Four-tier confidence system with admin review for low confidence",
+      "context": "AI should never make assumptions when uncertain about user intent",
+      "rationale": [
+        "Safety: Prevents AI from generating incorrect code when unsure",
+        "Quality: Human oversight ensures high-quality responses",
+        "Learning: Admin corrections improve AI over time",
+        "User trust: Better to ask than give wrong answer"
+      ],
+      "thresholds": {
+        "high": "≥0.8 - Proceed normally with AI generation",
+        "medium": "0.5-0.8 - Ask user for clarification",
+        "low": "0.3-0.5 - Queue for admin review",
+        "very_low": "<0.3 - Immediate high-priority admin review"
+      },
+      "implementation": {
+        "intent_analysis": "Pattern matching with confidence scoring",
+        "admin_queue": "uncertainty_requests table with priority",
+        "learning_loop": "Admin decisions update intent patterns"
+      },
+      "status": "implemented",
+      "documentation": "AI/INTENT_MANAGEMENT_SYSTEM.md"
+    },
+    {
+      "id": "decision_006",
+      "date": "2025-10-11",
+      "title": "Discord OAuth with GG Membership Verification",
+      "decision": "Require Discord authentication AND GG Discord server membership",
+      "context": "Platform is for GG community only",
+      "rationale": [
+        "Community-first: Only GG members can contribute",
+        "User identity: Discord ID provides stable user identification",
+        "Trust model: Discord membership validates community belonging",
+        "Reduced spam: Limits access to verified community members"
+      ],
+      "implementation": {
+        "oauth_flow": "NextAuth with Discord provider",
+        "verification": "Check guild membership via Discord API",
+        "caching": "5-minute cache to reduce API calls",
+        "retry_logic": "Exponential backoff for rate limit handling"
+      },
+      "alternatives_considered": [
+        {
+          "option": "Email/password authentication",
+          "rejected_reason": "Doesn't verify GG community membership"
+        },
+        {
+          "option": "Open to all Discord users",
+          "rejected_reason": "Not aligned with GG community-first goal"
+        }
+      ],
+      "status": "implemented",
+      "documentation": "AI/DISCORD_AUTHENTICATION_GUIDE.md"
+    },
+    {
+      "id": "decision_007",
+      "date": "2025-10-12",
+      "title": "No Type Hints in Python Code",
+      "decision": "Keep Python code without type hints",
+      "context": "Code style and readability preferences",
+      "rationale": [
+        "Cleaner code: Less visual clutter",
+        "Team preference: Developers prefer Python without types",
+        "Pydantic provides validation: Type safety at boundaries",
+        "Faster development: Less boilerplate to write"
+      ],
+      "trade_offs": {
+        "pros": ["Cleaner, more readable code", "Faster to write"],
+        "cons": ["Less IDE support", "Potential runtime errors"]
+      },
+      "mitigation": {
+        "validation": "Pydantic models at all API boundaries",
+        "testing": "Required tests for new endpoints",
+        "documentation": "Clear docstrings for all functions"
+      },
+      "status": "enforced",
+      "location": ".cursorrules"
+    },
+    {
+      "id": "decision_008",
+      "date": "2025-10-13",
+      "title": "Task Template for Feature Development",
+      "decision": "Require task template for all new features to manage complexity",
+      "context": "Codebase growing, need structured approach to features",
+      "rationale": [
+        "Consistency: All features follow same planning process",
+        "Documentation: Built-in documentation from start",
+        "Approval: Strategic checkpoint before implementation",
+        "Memory: Easy to reference past decisions"
+      ],
+      "template_sections": [
+        "Summary and goals",
+        "Strategic analysis with options",
+        "Approval checkpoint",
+        "Current state analysis",
+        "Implementation plan",
+        "Acceptance criteria",
+        "Test plan",
+        "Status tracking"
+      ],
+      "status": "implemented",
+      "location": "AI/task_template.md",
+      "usage": "Required for new features, optional for bug fixes"
+    }
+  ],
+  "pending_decisions": [
+    {
+      "id": "pending_001",
+      "title": "Item Management System Architecture",
+      "context": "Need to design comprehensive item tracking system",
+      "options_to_evaluate": [
+        "Separate item database vs integrated into scripts",
+        "Item hue management approach",
+        "Item categorization and search"
+      ],
+      "priority": "high",
+      "needs_input_from": ["user", "community"]
+    },
+    {
+      "id": "pending_002",
+      "title": "Scaling Strategy",
+      "context": "When/how to scale beyond current SQLite + FAISS",
+      "trigger": "Monitor performance at 100+ concurrent users or 50,000+ chunks",
+      "options_to_evaluate": [
+        "PostgreSQL + pgvector",
+        "Horizontal scaling with load balancer",
+        "Caching layer (Redis)"
+      ],
+      "priority": "low",
+      "status": "monitoring"
+    }
+  ],
+  "decision_principles": [
+    "Start simple, scale when needed",
+    "Prefer operational simplicity over theoretical scalability",
+    "Community needs drive feature decisions",
+    "Document all architectural choices",
+    "Review decisions when context changes"
+  ]
+}
+

@@ -1,5 +1,5 @@
-import React from 'react';
-import { getHueColorName } from '../../../utils/items/hueHelpers';
+import React, { useState } from 'react';
+import { EditHueModal } from './EditHueModal';
 
 interface Hue {
   hue: number;
@@ -9,13 +9,26 @@ interface Hue {
 
 interface HueListProps {
   hues: Hue[];
-  onEditHue?: (hue: number, description: string) => void;
+  onEditHue?: (hue: number, updateData: { description: string }) => void;
   onRemoveHue?: (hue: number) => void;
   editable?: boolean;
   loading?: boolean;
 }
 
 export function HueList({ hues, onEditHue, onRemoveHue, editable = false, loading = false }: HueListProps) {
+  const [editingHue, setEditingHue] = useState<{ hue: number; description: string; usage_count: number } | null>(null);
+
+  const handleEdit = (hue: { hue: number; description: string; usage_count: number }) => {
+    setEditingHue(hue);
+  };
+
+  const handleSave = async (hueValue: number, newDescription: string): Promise<boolean> => {
+    if (onEditHue) {
+      const success = await onEditHue(hueValue, { description: newDescription });
+      return success;
+    }
+    return false;
+  };
   if (loading) {
     return (
       <div className="space-y-2">
@@ -37,55 +50,67 @@ export function HueList({ hues, onEditHue, onRemoveHue, editable = false, loadin
   }
 
   return (
-    <div className="space-y-2">
-      {hues.map((hue) => (
-        <div
-          key={hue.hue}
-          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
-        >
-          <div className="flex items-center space-x-3">
-            {/* Hue info */}
-            <div className="flex-1">
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-gray-900">
-                  {hue.hue}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {hue.description || getHueColorName(hue.hue)}
-                </span>
-                {hue.usage_count > 0 && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                    {hue.usage_count} uses
+    <>
+      <div className="space-y-2">
+        {hues.map((hue) => (
+          <div
+            key={hue.hue}
+            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+          >
+            <div className="flex items-center space-x-3">
+              {/* Hue info */}
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium text-gray-900">
+                    {hue.hue}
                   </span>
-                )}
+                  <span className="text-sm text-gray-500">
+                    {hue.description}
+                  </span>
+                  {hue.usage_count > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      {hue.usage_count} uses
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Actions */}
-          {editable && (onEditHue || onRemoveHue) && (
-            <div className="flex items-center space-x-2">
-              {onEditHue && (
-                <button
-                  onClick={() => onEditHue(hue.hue, hue.description)}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                >
-                  Edit
-                </button>
-              )}
-              {onRemoveHue && (
-                <button
-                  onClick={() => onRemoveHue(hue.hue)}
-                  className="text-red-600 hover:text-red-800 text-sm font-medium"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+            {/* Actions */}
+            {editable && (onEditHue || onRemoveHue) && (
+              <div className="flex items-center space-x-2">
+                {onEditHue && (
+                  <button
+                    onClick={() => handleEdit(hue)}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                  >
+                    Edit
+                  </button>
+                )}
+                {onRemoveHue && (
+                  <button
+                    onClick={() => onRemoveHue(hue.hue)}
+                    className="text-red-600 hover:text-red-800 text-sm font-medium"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Edit Modal */}
+      {editingHue && (
+        <EditHueModal
+          isOpen={!!editingHue}
+          onClose={() => setEditingHue(null)}
+          hue={editingHue}
+          onSave={handleSave}
+        />
+      )}
+    </>
   );
 }
 

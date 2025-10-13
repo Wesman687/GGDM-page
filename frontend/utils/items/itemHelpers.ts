@@ -4,14 +4,15 @@ import { Item } from '../../types/items';
  * Compute item type based on name and item_id
  */
 export function computeItemType(item: Item): 'id-only' | 'name-only' | 'complete' {
-  const hasName = item.name && item.name.trim() !== '';
+  const hasName = item.name && item.name.trim() !== '' && !isNumericId(item.name);
   const hasId = item.item_id !== null && item.item_id !== undefined;
+  const hasNumericName = item.name && isNumericId(item.name);
   
   if (hasName && hasId) {
     return 'complete';
-  } else if (hasId && !hasName) {
+  } else if ((hasId || hasNumericName) && !hasName) {
     return 'id-only';
-  } else if (hasName && !hasId) {
+  } else if (hasName && !hasId && !hasNumericName) {
     return 'name-only';
   }
   
@@ -19,15 +20,29 @@ export function computeItemType(item: Item): 'id-only' | 'name-only' | 'complete
 }
 
 /**
+ * Check if a string is purely numeric (represents an item ID) or hex
+ */
+export function isNumericId(name: string): boolean {
+  return /^\d+$/.test(name.trim()) || /^0x[0-9a-fA-F]+$/.test(name.trim());
+}
+
+/**
  * Compute display name for an item
  */
 export function computeDisplayName(item: Item): string {
-  if (item.name && item.name.trim() !== '') {
+  // If name exists and is not numeric, use it
+  if (item.name && item.name.trim() !== '' && !isNumericId(item.name)) {
     return item.name;
   }
   
+  // If we have an item_id, use it
   if (item.item_id !== null && item.item_id !== undefined) {
     return `item_${item.item_id}`;
+  }
+  
+  // If name is numeric, treat it as an ID
+  if (item.name && isNumericId(item.name)) {
+    return `item_${item.name}`;
   }
   
   return 'Unknown Item';
@@ -37,9 +52,19 @@ export function computeDisplayName(item: Item): string {
  * Compute display ID for an item
  */
 export function computeDisplayId(item: Item): string | null {
+  // If we have an item_id, use it
   if (item.item_id !== null && item.item_id !== undefined) {
     return item.item_id.toString();
   }
+  
+  // If name is numeric or hex, treat it as an ID
+  if (item.name && isNumericId(item.name)) {
+    if (item.name.startsWith('0x')) {
+      return item.name; // Keep hex format
+    }
+    return item.name;
+  }
+  
   return null;
 }
 
@@ -47,8 +72,10 @@ export function computeDisplayId(item: Item): string | null {
  * Check if an item is verified (has both name and ID)
  */
 export function isItemVerified(item: Item): boolean {
-  return item.name && item.name.trim() !== '' && 
-         item.item_id !== null && item.item_id !== undefined;
+  const hasName = item.name && item.name.trim() !== '' && !isNumericId(item.name);
+  const hasId = item.item_id !== null && item.item_id !== undefined;
+  
+  return hasName && hasId;
 }
 
 /**

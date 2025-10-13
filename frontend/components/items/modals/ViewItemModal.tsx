@@ -50,7 +50,7 @@ export function ViewItemModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Hooks for hues and scripts
-  const { hues, addHue, updateHue, removeHue } = useItemHues(item?.id || 0);
+  const { hues, addHue, updateHue, removeHue, loadItemHues } = useItemHues(item?.id || 0);
   const { hueSets, individualHues, loadHueSets, loadIndividualHues } = useHues();
   const { 
     scriptExamples, 
@@ -600,8 +600,13 @@ export function ViewItemModal({
                 <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
                   <h4 className="text-md font-medium mb-3">Bulk Hue Options</h4>
                   <BulkHueForm
-                    onAddHues={(hues) => {
-                      hues.forEach(hue => addHue(hue));
+                    onAddHues={async (hues) => {
+                      // Add all hues sequentially to avoid race conditions
+                      for (const hue of hues) {
+                        await addHue(hue);
+                      }
+                      // Reload hues to ensure UI is updated
+                      loadItemHues();
                     }}
                     hueSets={hueSets}
                     individualHues={individualHues}

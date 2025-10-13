@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { Item, ItemFilters } from '../types/items';
 import { useItems } from '../hooks/items/useItems';
+import { useHues } from '../hooks/items/useHues';
 import { ItemFilters as ItemFiltersComponent } from '../components/items/ItemFilters';
 import { CreateItemModal } from '../components/items/modals/CreateItemModal';
 import { ViewItemModal } from '../components/items/modals/ViewItemModal';
 import { ItemsMergeModal } from '../components/items/modals/ItemsMergeModal';
 import { HueListCompact } from '../components/items/hues/HueList';
+import { HueSetManager } from '../components/items/hues/HueSetManager';
 import { computeItemProperties, isPlaceholderName } from '../utils/items/itemHelpers';
 
 export default function ItemsPage() {
@@ -36,9 +38,12 @@ export default function ItemsPage() {
     clearError
   } = useItems();
 
+  const { hueSets, loadHueSets, individualHues } = useHues();
+
   useEffect(() => {
     loadItems(filters);
-  }, [loadItems, filters]);
+    loadHueSets();
+  }, [loadItems, loadHueSets, filters]);
 
   const handleFiltersChange = (newFilters: ItemFilters) => {
     setFilters(newFilters);
@@ -65,7 +70,12 @@ export default function ItemsPage() {
   const handleUpdateItem = async (id: number, data: any): Promise<boolean> => {
     try {
       const updatedItem = await updateItem(id, data);
-      return !!updatedItem;
+      if (updatedItem) {
+        // Refresh the items list to show the updated data
+        await loadItems(filters);
+        return true;
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -74,7 +84,12 @@ export default function ItemsPage() {
   const handleDeleteItem = async (id: number): Promise<boolean> => {
     try {
       const success = await deleteItem(id);
-      return success;
+      if (success) {
+        // Refresh the items list to remove the deleted item
+        await loadItems(filters);
+        return true;
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -83,7 +98,12 @@ export default function ItemsPage() {
   const handleQuickRename = async (id: number, newName: string): Promise<boolean> => {
     try {
       const success = await quickRename(id, newName);
-      return success;
+      if (success) {
+        // Refresh the items list to show the renamed item
+        await loadItems(filters);
+        return true;
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -92,7 +112,12 @@ export default function ItemsPage() {
   const handleMergeItems = async (sourceId: number, targetId: number): Promise<boolean> => {
     try {
       const mergedItem = await mergeItems({ source_item_id: sourceId, target_item_id: targetId });
-      return !!mergedItem;
+      if (mergedItem) {
+        // Refresh the items list to show the merged result
+        await loadItems(filters);
+        return true;
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -107,6 +132,7 @@ export default function ItemsPage() {
     setShowMergeModal(false);
     setMergeItem(null);
   };
+
 
   const handleItemClick = (item: Item) => {
     const itemWithProperties = computeItemProperties(item);
@@ -131,12 +157,15 @@ export default function ItemsPage() {
               Manage and organize items with their hues and script usage examples.
             </p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-          >
-            Create Item
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+            >
+              Create Item
+            </button>
+            <HueSetManager hueSets={hueSets} individualHues={individualHues} onHueSetsChange={loadHueSets} />
+          </div>
         </div>
 
         <ItemFiltersComponent
@@ -192,14 +221,27 @@ export default function ItemsPage() {
                           onClick={() => handleItemClick(itemWithProperties)}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {itemWithProperties.display_name}
-                              </div>
-                              {itemWithProperties.display_id && (
-                                <div className="text-sm text-gray-500">
-                                  ID: {itemWithProperties.display_id}
+                            <div className="flex items-center space-x-2">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {itemWithProperties.display_name}
                                 </div>
+                                {itemWithProperties.display_id && (
+                                  <div className="text-sm text-gray-500">
+                                    ID: {itemWithProperties.display_id}
+                                  </div>
+                                )}
+                              </div>
+                              {itemWithProperties.item_type !== 'complete' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenMergeModal(itemWithProperties);
+                                  }}
+                                  className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+                                >
+                                  Merge
+                                </button>
                               )}
                             </div>
                           </td>
@@ -223,17 +265,6 @@ export default function ItemsPage() {
                               >
                                 View
                               </button>
-                              {itemWithProperties.item_type !== 'complete' && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenMergeModal(itemWithProperties);
-                                  }}
-                                  className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-                                >
-                                  Merge
-                                </button>
-                              )}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -272,7 +303,6 @@ export default function ItemsPage() {
         item={selectedItem}
         categories={categories}
         onUpdateItem={handleUpdateItem}
-        onDeleteItem={handleDeleteItem}
         onQuickRename={handleQuickRename}
         onMergeItems={handleMergeItems}
       />
@@ -285,6 +315,7 @@ export default function ItemsPage() {
         onMergeItems={handleMergeItems}
         onUpdateItem={handleUpdateItem}
       />
+
     </Layout>
   );
 }

@@ -3,20 +3,37 @@ import { useAuth } from '@/lib/auth'
 import { ScriptCreate, ScriptTag, apiService } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { X, Save, Tag, Code, FileText, Download } from 'lucide-react'
+import ItemValidationModal from './ItemValidationModal'
+import axios from 'axios'
 
 interface CreateScriptModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
+  parentScriptId?: string  // If provided, this is a companion script
+  parentScriptTitle?: string  // For display purposes
 }
 
-export default function CreateScriptModal({ isOpen, onClose, onSuccess }: CreateScriptModalProps) {
+export default function CreateScriptModal({ 
+  isOpen, 
+  onClose, 
+  onSuccess,
+  parentScriptId,
+  parentScriptTitle 
+}: CreateScriptModalProps) {
   const { user, isAdmin } = useAuth()
   const [loading, setLoading] = useState(false)
   const [tags, setTags] = useState<ScriptTag[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagSearchTerm, setTagSearchTerm] = useState('')
   const [selectedTagIndex, setSelectedTagIndex] = useState(-1)
+  const [showItemValidation, setShowItemValidation] = useState(false)
+  const [createdScriptId, setCreatedScriptId] = useState<string | null>(null)
+  const [executionOrder, setExecutionOrder] = useState<number | undefined>(undefined)
+  
+  // Check if this is a companion script
+  const isCompanion = !!parentScriptId
+  
   const [formData, setFormData] = useState<ScriptCreate>({
     title: '',
     author: user?.username || '',
@@ -24,10 +41,13 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
     tags: [],
     description: '',
     code: '',
-    exe_download_url: ''
+    exe_download_url: '',
+    parent_script_id: parentScriptId,
+    is_companion: isCompanion,
+    execution_order: undefined
   })
 
-  // Load tags on component mount
+  // Load tags and available scripts on component mount
   useEffect(() => {
     if (isOpen) {
       const loadTags = async () => {
@@ -38,6 +58,7 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
           console.error('Failed to load tags:', error)
         }
       }
+      
       loadTags()
     }
   }, [isOpen])
@@ -52,13 +73,17 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
         tags: [],
         description: '',
         code: '',
-        exe_download_url: ''
+        exe_download_url: '',
+        parent_script_id: parentScriptId,
+        is_companion: isCompanion,
+        execution_order: undefined
       })
       setSelectedTags([])
       setTagSearchTerm('')
       setSelectedTagIndex(-1)
+      setExecutionOrder(undefined)
     }
-  }, [isOpen, user?.username])
+  }, [isOpen, user?.username, parentScriptId, isCompanion])
 
   const languages = [
     { value: 'razor', label: 'Razor Enhanced', icon: '🔧' },
@@ -72,6 +97,9 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
     }))
   }
 
+  /**
+   * Handle form submission - validates items first, then shows validation modal
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -85,14 +113,35 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
       return
     }
 
+    // Show item validation modal
+    setShowItemValidation(true)
+  }
+
+  /**
+   * Called after items are validated - creates the script
+   */
+  const handleItemValidationComplete = async () => {
+    setShowItemValidation(false)
     setLoading(true)
+    
     try {
       const submitData = {
         ...formData,
         author: user?.username || '', // Always use Discord username
-        tags: selectedTags
+        tags: selectedTags,
+        parent_script_id: parentScriptId,
+        is_companion: isCompanion,
+        execution_order: executionOrder
       }
-      const response = await apiService.createScript(submitData, user.discordId, isAdmin)
+      const response = await apiService.createScript(submitData, user!.discordId, isAdmin)
+      
+      // Store script ID for linking items
+      if (response.id) {
+        setCreatedScriptId(response.id)
+        
+        // Link script to items
+        await linkScriptToItems(response.id, submitData.title, submitData.code)
+      }
       
       // Show the message from the API response
       if (response.message) {
@@ -111,25 +160,58 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
     }
   }
 
+  /**
+   * Link created script to its referenced items
+   */
+  const linkScriptToItems = async (scriptId: string, title: string, code: string) => {
+    try {
+      await axios.post('/api/items/link-script-to-items', {
+        script_id: scriptId,
+        script_title: title,
+        script_code: code
+      })
+    } catch (error) {
+      console.error('Error linking script to items:', error)
+      // Don't fail the whole process if linking fails
+    }
+  }
+
+  /**
+   * Handle canceling item validation
+   */
+  const handleItemValidationCancel = () => {
+    setShowItemValidation(false)
+  }
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        {/* Backdrop */}
-        <div 
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-          onClick={onClose}
+    <>
+      {/* Item Validation Modal */}
+      {showItemValidation && (
+        <ItemValidationModal
+          scriptCode={formData.code}
+          onComplete={handleItemValidationComplete}
+          onCancel={handleItemValidationCancel}
         />
+      )}
 
-        {/* Modal */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-4 sm:align-middle sm:max-w-5xl sm:w-full">
-          <form onSubmit={handleSubmit}>
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+            onClick={onClose}
+          />
+
+          {/* Modal */}
+          <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-4 sm:align-middle sm:max-w-5xl sm:w-full">
+            <form onSubmit={handleSubmit}>
             {/* Header */}
             <div className="bg-white px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Create New Script
+                  {isCompanion ? `Add Companion Script${parentScriptTitle ? ` to ${parentScriptTitle}` : ''}` : 'Create New Script'}
                 </h3>
                 <button
                   type="button"
@@ -397,6 +479,37 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
                   />
                 </div>
 
+                {/* Companion Script Info */}
+                {isCompanion && parentScriptTitle && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="mb-3">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-1">
+                        Companion Script for: {parentScriptTitle}
+                      </h4>
+                      <p className="text-xs text-blue-700">
+                        This script will work together with the main script. It will be displayed alongside it.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Execution Order (Optional)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={executionOrder || ''}
+                        onChange={(e) => setExecutionOrder(parseInt(e.target.value) || undefined)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="e.g., 1, 2, 3..."
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        If there are multiple companion scripts, use this to set the order (1 = first, 2 = second, etc.)
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Code */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -448,6 +561,7 @@ export default function CreateScriptModal({ isOpen, onClose, onSuccess }: Create
           </form>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

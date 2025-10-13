@@ -1,0 +1,424 @@
+{
+  "feature": "ai_assistant",
+  "status": "active",
+  "last_updated": "2025-10-13",
+  "description": "RAG-based AI assistant for Razor script generation with self-learning capabilities",
+  
+  "architecture": {
+    "type": "Retrieval-Augmented Generation (RAG)",
+    "components": {
+      "vector_store": "FAISS (Facebook AI Similarity Search)",
+      "metadata_store": "SQLite (ai_service.db)",
+      "llm": "GPT-4o-mini (OpenAI)",
+      "embeddings": "text-embedding-3-small (1536 dimensions)",
+      "rules_engine": "Markdown-based rules (RULES.md)"
+    },
+    "integration": "Consolidated into main backend (port 7000)",
+    "no_separate_service": "Important: AI runs in main backend, NOT on port 7001"
+  },
+  
+  "rag_pipeline": {
+    "data_sources": {
+      "scripts": {
+        "count": "6,444 chunks",
+        "priority": "60% of retrieval results (GG Scripts prioritized)",
+        "source": "backend/ai/data/scripts.jsonl"
+      },
+      "documentation": {
+        "count": "71 chunks",
+        "priority": "Included in 40% other sources",
+        "source": "backend/ai/data/docs/razor_scripting.md"
+      },
+      "rules": {
+        "count": "21 chunks",
+        "priority": "Always included in context",
+        "source": "backend/ai/rules/RULES.md"
+      },
+      "wiki": {
+        "description": "UO Outlands wiki knowledge",
+        "purpose": "Intent pattern enhancement",
+        "storage": "wiki_knowledge table"
+      }
+    },
+    
+    "retrieval_process": {
+      "1_query_embedding": {
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+        "implementation": "backend/ai_rag.py:embed_query()"
+      },
+      "2_similarity_search": {
+        "algorithm": "FAISS cosine similarity",
+        "top_k": 8,
+        "priority_split": "60% GG Scripts, 40% other",
+        "implementation": "backend/ai_rag.py:search_similar()"
+      },
+      "3_context_formatting": {
+        "structure": [
+          "=== GG SCRIPTS (PRIORITY REFERENCE) ===",
+          "--- GG Script N with relevance score ---",
+          "=== ADDITIONAL REFERENCE MATERIALS ===",
+          "--- Other sources with relevance ---",
+          "=== ANALYSIS INSTRUCTIONS ===",
+          "1. PRIORITIZE patterns from GG Scripts",
+          "2. Use multiple examples",
+          "3. Combine techniques appropriately"
+        ],
+        "max_chars": 16000,
+        "implementation": "backend/ai_rag.py:format_context()"
+      },
+      "4_llm_generation": {
+        "model": "gpt-4o-mini",
+        "temperature": 0.7,
+        "includes": ["Retrieved context", "AI rules", "User query"],
+        "implementation": "backend/ai_rag.py:generate_response()"
+      }
+    }
+  },
+  
+  "intent_management": {
+    "confidence_thresholds": {
+      "high": {
+        "value": "≥0.8",
+        "action": "Proceed normally with code generation",
+        "rationale": "High confidence in understanding user intent"
+      },
+      "medium": {
+        "value": "0.5-0.8",
+        "action": "Ask user for clarification",
+        "rationale": "Reasonable understanding but confirmation needed"
+      },
+      "low": {
+        "value": "0.3-0.5",
+        "action": "Queue for admin review (normal priority)",
+        "rationale": "Uncertain about intent, need human input"
+      },
+      "very_low": {
+        "value": "<0.3",
+        "action": "Immediate high-priority admin review",
+        "rationale": "Very unclear intent, urgent human review needed"
+      }
+    },
+    
+    "pattern_matching": {
+      "database": "intent_patterns table",
+      "fields": ["keywords (JSON)", "tags (JSON)", "context_needed", "requirements"],
+      "scoring": {
+        "keyword_match": "40% weight",
+        "tag_match": "30% weight",
+        "context_match": "20% weight",
+        "usage_history": "10% weight"
+      },
+      "implementation": "backend/routes/ai_intents.py"
+    },
+    
+    "uncertainty_management": {
+      "queue_table": "uncertainty_requests",
+      "admin_interface": "frontend/pages/admin-ai-management.tsx",
+      "resolution_actions": [
+        "Confirm intent (updates confidence)",
+        "Correct intent (updates patterns)",
+        "Expand patterns (adds keywords)",
+        "Add learning notes"
+      ],
+      "learning_loop": "Admin decisions automatically update intent_patterns"
+    }
+  },
+  
+  "self_learning": {
+    "mechanisms": {
+      "code_corrections": {
+        "description": "Learns from user edits to AI-generated code",
+        "detection_patterns": [
+          "Serial number → Item name (0x... → 'item name')",
+          "Missing waitforgump after gumpresponse",
+          "Missing @clearignore before scans",
+          "Improper findtype usage",
+          "Missing wait commands in loops"
+        ],
+        "flow": [
+          "1. User edits AI code",
+          "2. System detects correction patterns",
+          "3. Generates rule suggestions",
+          "4. Admin reviews suggestions",
+          "5. Approved rules added to RULES.md",
+          "6. AI uses updated rules in future"
+        ],
+        "implementation": "frontend/components/AIBotInterface.tsx:generateRuleSuggestions()"
+      },
+      
+      "wiki_integration": {
+        "description": "Scrapes UO Outlands wiki for game knowledge",
+        "process": [
+          "1. Automated scraping of wiki pages",
+          "2. Extract keywords and mechanics",
+          "3. Identify intent patterns",
+          "4. Enhance existing patterns",
+          "5. Boost confidence scores"
+        ],
+        "storage": "wiki_knowledge table",
+        "implementation": "backend/scraper.py (adaptable)"
+      },
+      
+      "usage_tracking": {
+        "description": "Monitors which intent patterns are effective",
+        "metrics": [
+          "Usage count (how often triggered)",
+          "Success rate (user approval)",
+          "Confidence accuracy (predicted vs actual)"
+        ],
+        "adjustments": [
+          "Increase confidence for successful patterns",
+          "Decrease for frequently corrected patterns",
+          "Expand keywords for partial matches"
+        ],
+        "implementation": "backend/routes/ai_intents.py:track_usage()"
+      }
+    },
+    
+    "rule_suggestions": {
+      "generation": "Automatic based on code diff analysis",
+      "storage": "rule_suggestions table",
+      "admin_review": "Required before adding to RULES.md",
+      "auto_backup": "RULES.md backed up before any updates",
+      "implementation": "backend/routes/suggestions.py"
+    }
+  },
+  
+  "api_endpoints": {
+    "ai_search": {
+      "method": "POST",
+      "path": "/api/scripts/ai/search",
+      "requires": ["user_id"],
+      "body": {"question": "Natural language query"},
+      "response": {
+        "explanation": "How the solution works",
+        "code": "Generated Razor script",
+        "citations": "Sources used (with relevance scores)",
+        "confidence": "Intent confidence score"
+      },
+      "implementation": "backend/routes/scripts.py:ai_search()"
+    },
+    
+    "submit_feedback": {
+      "method": "POST",
+      "path": "/api/scripts/ai/feedback",
+      "requires": ["user_id"],
+      "body": {
+        "interaction_id": "ID from search response",
+        "decision": "approved | declined | edited",
+        "edited_code": "If decision=edited",
+        "rating": "1-5 optional",
+        "reasons": "Array of feedback reasons"
+      },
+      "learning": "Triggers rule suggestion generation if edited"
+    },
+    
+    "intent_patterns": {
+      "list": "GET /api/ai/intents/patterns",
+      "get": "GET /api/ai/intents/patterns/{id}",
+      "update": "PUT /api/ai/intents/patterns/{id}",
+      "create": "POST /api/ai/intents/patterns",
+      "analytics": "GET /api/ai/intents/analytics"
+    },
+    
+    "uncertainty": {
+      "pending": "GET /api/ai/uncertainty/pending-reviews",
+      "resolve": "POST /api/ai/uncertainty/resolve/{id}",
+      "analyze": "POST /api/ai/uncertainty/analyze",
+      "stats": "GET /api/ai/uncertainty/stats",
+      "dashboard": "GET /api/ai/uncertainty/admin-dashboard"
+    }
+  },
+  
+  "database_tables": {
+    "rag_chunks": {
+      "purpose": "Store text chunks with metadata",
+      "fields": [
+        "id (unique)",
+        "source (script/docs/rules)",
+        "title",
+        "url",
+        "text",
+        "meta (JSON)"
+      ],
+      "embeddings": "Stored separately in FAISS index file"
+    },
+    
+    "interactions": {
+      "purpose": "Log AI interactions",
+      "fields": [
+        "id",
+        "question",
+        "assistant_draft",
+        "retrieved (context used)",
+        "citations",
+        "decision (approved/declined/edited)",
+        "rating",
+        "session_id"
+      ]
+    },
+    
+    "intent_patterns": {
+      "purpose": "Dynamic intent recognition patterns",
+      "fields": [
+        "id",
+        "intent_name",
+        "keywords (JSON array)",
+        "tags (JSON array)",
+        "context_needed (JSON array)",
+        "requirements (JSON array)",
+        "confidence_score",
+        "usage_count"
+      ]
+    },
+    
+    "uncertainty_requests": {
+      "purpose": "Queue uncertain requests for admin",
+      "fields": [
+        "id",
+        "user_query",
+        "detected_intent (JSON)",
+        "confidence_score",
+        "uncertainty_reason",
+        "suggested_action",
+        "admin_response (JSON)",
+        "status (pending/resolved)",
+        "resolved_by"
+      ]
+    }
+  },
+  
+  "ai_rules_system": {
+    "location": "backend/ai/rules/RULES.md",
+    "format": "Markdown with structured sections",
+    "admin_editing": "frontend/pages/admin-ai-rules.tsx",
+    "automatic_backup": "RULES_backup_YYYYMMDD_HHMMSS.md",
+    "categories": [
+      "Core Principles (clear, minimal code)",
+      "Critical Requirements (gumps, ignore, waits)",
+      "Code Structure (formatting, organization)",
+      "Performance (minimize server calls, loops)",
+      "Common Patterns (what to do)",
+      "Anti-Patterns (what to avoid)"
+    ],
+    "update_process": [
+      "1. Admin edits rules in UI",
+      "2. System creates backup of current RULES.md",
+      "3. Saves new rules",
+      "4. AI automatically loads updated rules",
+      "5. Next AI response uses new rules"
+    ]
+  },
+  
+  "common_operations": {
+    "ai_query": {
+      "steps": [
+        "1. User asks question in AIBotInterface",
+        "2. Frontend sends to /api/scripts/ai/search",
+        "3. Backend analyzes intent and calculates confidence",
+        "4. If low confidence: Queue for admin review",
+        "5. If sufficient confidence: Proceed with RAG",
+        "6. Generate query embedding",
+        "7. FAISS similarity search (top-k=8)",
+        "8. Prioritize GG Scripts (60%) in results",
+        "9. Format context with rules",
+        "10. OpenAI GPT-4o-mini generates response",
+        "11. Extract and lint code",
+        "12. Return explanation + code + citations",
+        "13. User provides feedback",
+        "14. If edited: Generate rule suggestions"
+      ],
+      "files": [
+        "frontend/components/AIBotInterface.tsx",
+        "backend/routes/scripts.py:ai_search()",
+        "backend/ai_rag.py (RAG implementation)",
+        "backend/ai_lint.py (code linting)"
+      ]
+    },
+    
+    "admin_review_uncertain": {
+      "steps": [
+        "1. Admin opens Uncertainty Reviews tab",
+        "2. Views pending uncertain requests",
+        "3. Reviews user query and detected intent",
+        "4. Takes action:",
+        "   - Confirm intent → Updates confidence",
+        "   - Correct intent → Updates patterns",
+        "   - Expand patterns → Adds keywords",
+        "   - Add notes → Provides context",
+        "5. System learns from decision",
+        "6. Updates intent_patterns table",
+        "7. Future similar queries use improved patterns"
+      ],
+      "files": [
+        "frontend/pages/admin-ai-management.tsx",
+        "backend/routes/ai_uncertainty.py"
+      ]
+    },
+    
+    "update_ai_rules": {
+      "steps": [
+        "1. Admin navigates to AI Rules tab",
+        "2. Edits RULES.md in markdown editor",
+        "3. Clicks Save Rules",
+        "4. Backend creates timestamped backup",
+        "5. Writes new rules to RULES.md",
+        "6. AI reloads rules file",
+        "7. Confirmation shown to admin"
+      ],
+      "files": [
+        "frontend/pages/admin-ai-rules.tsx",
+        "backend/routes/scripts.py:update_ai_rules()"
+      ]
+    }
+  },
+  
+  "known_gotchas": [
+    "FAISS index must be loaded at startup (takes 1-2 seconds)",
+    "Context limited to 16,000 chars to avoid token overflow",
+    "GG Scripts priority means they dominate in retrieval (by design)",
+    "Intent patterns are in database, NOT hardcoded",
+    "Always backup RULES.md before updates",
+    "Confidence thresholds are tunable in environment vars",
+    "OpenAI API has rate limits (use retry with backoff)",
+    "Embeddings are 1536 dimensions (text-embedding-3-small)"
+  ],
+  
+  "performance_considerations": {
+    "faiss_index": "Loaded once at startup, cached in memory",
+    "embedding_generation": "~100ms for query embedding",
+    "similarity_search": "Sub-second for 6,500 chunks",
+    "llm_generation": "2-5 seconds depending on complexity",
+    "total_response_time": "3-8 seconds typical",
+    "optimization_targets": [
+      "Reduce context size if > 16k chars",
+      "Cache frequently asked questions",
+      "Batch embed requests if possible"
+    ]
+  },
+  
+  "testing_checklist": [
+    "AI responds to simple queries (e.g., 'create fishing script')",
+    "High confidence queries proceed without admin review",
+    "Low confidence queries queued for admin",
+    "Code generation follows patterns from GG Scripts",
+    "Citations include correct source references",
+    "User edits generate appropriate rule suggestions",
+    "Admin can review and resolve uncertain requests",
+    "Intent patterns update based on admin feedback",
+    "AI rules updates take effect immediately",
+    "Backup created before rules update"
+  ],
+  
+  "future_enhancements": [
+    "Fine-tune custom model on approved scripts",
+    "Real-time wiki updates (currently manual scraping)",
+    "ML-based intent classification (currently pattern matching)",
+    "Predictive confidence scoring",
+    "Automated rule suggestion approval for obvious fixes",
+    "Multi-language support (currently Razor only)",
+    "Advanced context caching for speed"
+  ]
+}
+

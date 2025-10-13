@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Item, ItemCategory, CreateItemRequest, UpdateItemRequest, MergeItemRequest, ItemFilters } from '../../types/items';
-import { computeItemPropertiesBatch } from '../../utils/items/itemHelpers';
+import { computeItemPropertiesBatch, computeItemProperties } from '../../utils/items/itemHelpers';
 
 const API_BASE = 'http://localhost:7000/api/items';
 

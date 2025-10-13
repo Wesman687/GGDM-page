@@ -1,0 +1,259 @@
+{
+  "feature": "scripts_management",
+  "status": "active",
+  "last_updated": "2025-10-13",
+  "description": "Comprehensive script repository with upload, approval, rating, and search capabilities",
+  
+  "core_patterns": {
+    "approval_workflow": {
+      "description": "Scripts require admin approval before public visibility",
+      "default_state": "is_approved = False",
+      "exception": {
+        "condition": "Author is 'jasown' or 'jasown scripts' (case-insensitive)",
+        "action": "Auto-approve with weighted rating",
+        "implementation": "backend/routes/scripts.py:create_script() lines ~50-60"
+      },
+      "admin_actions": [
+        "Approve: Sets is_approved = True",
+        "Reject: Deletes script with reason",
+        "Featured: Sets is_featured = True"
+      ]
+    },
+    
+    "rating_system": {
+      "description": "Weighted average rating system",
+      "calculation": "sum(rating * weight) / sum(weight)",
+      "weights": {
+        "user_rating": 1,
+        "jasown_rating": 5
+      },
+      "display": {
+        "rating_average": "Weighted average (1-5 stars)",
+        "rating_count": "Effective count (sum of weights)"
+      },
+      "implementation": "backend/routes/scripts.py:calculate_weighted_rating()",
+      "gotchas": [
+        "Jasown scripts start with rating_average=5.0, rating_count=5",
+        "Users can update their own ratings",
+        "One rating per user per script"
+      ]
+    },
+    
+    "tag_system": {
+      "description": "Categorization with tag limits",
+      "max_tags": 3,
+      "validation": [
+        "Pydantic model: backend/models.py:ScriptCreate",
+        "API endpoint: Validates len(tags) <= 3",
+        "Frontend: Tag selector limits to 3 selections"
+      ],
+      "search_behavior": {
+        "ranking": "matching_tags * 100 + featured * 50 + rating * 10 + views/100",
+        "priority": "Tag matches have highest weight in search results"
+      },
+      "predefined_tags": [
+        "fishing", "mining", "lumberjacking", "healing",
+        "pvp", "pvm", "automation", "utility", "crafting"
+      ]
+    },
+    
+    "code_preview": {
+      "description": "Truncated code for listing performance",
+      "length": 500,
+      "purpose": "Display in script cards without loading full code",
+      "full_code_access": "Loaded on script detail page",
+      "implementation": "code_preview = code[:500] on creation"
+    }
+  },
+  
+  "api_endpoints": {
+    "list": {
+      "method": "GET",
+      "path": "/api/scripts/",
+      "params": {
+        "category": "Filter by category",
+        "tags": "Comma-separated tags",
+        "author": "Filter by author",
+        "rating_min": "Minimum rating (1-5)",
+        "search_query": "Text search",
+        "is_approved": "Admin: filter by approval",
+        "limit": "Max 100",
+        "offset": "Pagination"
+      },
+      "auth": "Optional (shows more to admins)"
+    },
+    "create": {
+      "method": "POST",
+      "path": "/api/scripts/",
+      "requires": ["user_id (Discord ID)"],
+      "validation": [
+        "Title required",
+        "Code required",
+        "Max 3 tags",
+        "Language: razor or python"
+      ],
+      "special_handling": "Jasown auto-approval"
+    },
+    "rate": {
+      "method": "POST",
+      "path": "/api/scripts/{id}/rate",
+      "requires": ["user_id (Discord ID)"],
+      "body": {
+        "rating": "1-5 (required)",
+        "review": "Text (optional)"
+      },
+      "behavior": "Creates or updates user's rating"
+    },
+    "toggle_featured": {
+      "method": "POST",
+      "path": "/api/scripts/admin/{id}/toggle-featured",
+      "requires": ["user_id", "is_admin=true"],
+      "returns": "Updated script with new featured status"
+    }
+  },
+  
+  "database_schema": {
+    "scripts_cache": {
+      "key_fields": {
+        "id": "UUID primary key",
+        "title": "Script title (required)",
+        "author": "Author name (required)",
+        "category": "gg-scripts, jasown-scripts, ai-scripts",
+        "language": "razor or python",
+        "tags": "JSON array (max 3)",
+        "code_preview": "First 500 chars",
+        "full_code": "Complete script",
+        "is_approved": "Admin approval flag",
+        "is_featured": "Featured flag (admin only)",
+        "created_by": "Discord ID of creator",
+        "rating_average": "Weighted average",
+        "rating_count": "Effective count (sum of weights)"
+      }
+    },
+    "script_ratings": {
+      "key_fields": {
+        "id": "UUID primary key",
+        "script_id": "Foreign key to scripts_cache",
+        "user_id": "Discord ID",
+        "rating": "1-5 integer",
+        "review": "Optional text",
+        "weight": "1 for users, 5 for Jasown",
+        "is_jasown_rating": "Boolean flag"
+      },
+      "constraints": "Unique (script_id, user_id)"
+    }
+  },
+  
+  "frontend_components": {
+    "ScriptCard.tsx": {
+      "purpose": "Display script in list with rating stars",
+      "features": ["Title", "Author", "Tags", "Rating display", "View count"],
+      "interactions": ["Click to view details", "Rate (if detail page)"]
+    },
+    "ScriptViewer.tsx": {
+      "purpose": "Display full script with syntax highlighting",
+      "features": ["Code display", "Copy button", "Download option"]
+    },
+    "CreateScriptModal.tsx": {
+      "purpose": "Upload new script",
+      "validation": [
+        "Title and code required",
+        "Max 3 tags selectable",
+        "Language selection"
+      ],
+      "submit": "Creates script via API with user_id"
+    },
+    "ScriptsSearchBar.tsx": {
+      "purpose": "Search interface",
+      "modes": ["Manual search (filters)", "AI search (natural language)"],
+      "filters": ["Category", "Tags", "Author", "Rating"]
+    }
+  },
+  
+  "search_algorithm": {
+    "manual_search": {
+      "text_search": "Searches title, description, code_preview, author, tags",
+      "tag_matching": "Ranks by number of matching tags",
+      "ranking_formula": "tag_matches*100 + featured*50 + rating*10 + views/100"
+    },
+    "ai_search": {
+      "flow": "Query → Intent analysis → RAG retrieval → Code generation",
+      "context": "60% GG Scripts, 40% other sources",
+      "response": "Explanation + Generated code + Citations"
+    }
+  },
+  
+  "common_operations": {
+    "create_script": {
+      "steps": [
+        "1. User opens CreateScriptModal",
+        "2. Fills title, code, selects tags (max 3)",
+        "3. Submits with user_id from session",
+        "4. Backend validates (Pydantic model)",
+        "5. Checks author for Jasown (auto-approve)",
+        "6. Creates script with is_approved flag",
+        "7. Returns created script to frontend"
+      ],
+      "files": [
+        "frontend/components/CreateScriptModal.tsx",
+        "backend/routes/scripts.py:create_script()",
+        "backend/models.py:ScriptCreate"
+      ]
+    },
+    "rate_script": {
+      "steps": [
+        "1. User clicks stars on script detail page",
+        "2. Optional: Adds text review",
+        "3. Submits rating with user_id",
+        "4. Backend checks existing rating (upsert)",
+        "5. Recalculates weighted average",
+        "6. Updates script.rating_average and rating_count",
+        "7. Returns updated rating to frontend"
+      ],
+      "files": [
+        "frontend/pages/scripts/[id].tsx",
+        "backend/routes/scripts.py:rate_script()"
+      ]
+    },
+    "approve_script": {
+      "steps": [
+        "1. Admin views pending scripts",
+        "2. Clicks approve on script",
+        "3. Backend sets is_approved = True",
+        "4. Script becomes visible to all users"
+      ],
+      "admin_only": true,
+      "files": ["backend/routes/scripts.py:approve_script()"]
+    }
+  },
+  
+  "known_gotchas": [
+    "Always filter by is_approved=True for non-admin users",
+    "Jasown detection is case-insensitive on author field",
+    "Code preview is exactly 500 chars, may cut mid-word",
+    "Tag limit enforced in multiple places (Pydantic, API, UI)",
+    "Rating calculation must use sum(rating*weight)/sum(weight)",
+    "Users can only have one rating per script (upsert behavior)",
+    "Featured scripts appear first regardless of other filters"
+  ],
+  
+  "testing_checklist": [
+    "User can create script (becomes unapproved)",
+    "Jasown script auto-approved with 5-star rating",
+    "Tag limit enforced (reject > 3 tags)",
+    "Rating calculation correct (weighted average)",
+    "Search finds scripts by title, tags, author",
+    "Admin can approve/reject scripts",
+    "Featured scripts appear first in listing",
+    "Non-admin users only see approved scripts"
+  ],
+  
+  "future_enhancements": [
+    "Script versioning and update history",
+    "Script comments and discussions",
+    "Script forking and remixing",
+    "Advanced search filters (date range, complexity)",
+    "Script collections/playlists"
+  ]
+}
+
